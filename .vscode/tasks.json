@@ -1,0 +1,8 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {"label":"AgroNex: Install Python dependencies","type":"shell","command":"python -m pip install -r backend/requirements.txt","problemMatcher":[]},
+    {"label":"AgroNex: Run tests","type":"shell","command":"python -m pytest -q","group":"test","problemMatcher":[]},
+    {"label":"AgroNex: Build React frontend","type":"shell","command":"npm run build","options":{"cwd":"${workspaceFolder}/frontend"},"problemMatcher":[]}
+  ]
+}

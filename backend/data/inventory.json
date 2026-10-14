@@ -1,0 +1,62 @@
+[
+  {
+    "batch_id": "B001",
+    "commodity": "Tomatoes",
+    "quantity_kg": 100,
+    "remaining_shelf_life_hours": 12,
+    "selling_price_per_kg": 30,
+    "origin_id": "CENTRAL",
+    "handling_time_hours": 1,
+    "handling_cost_per_kg": 1
+  },
+  {
+    "batch_id": "B002",
+    "commodity": "Bananas",
+    "quantity_kg": 80,
+    "remaining_shelf_life_hours": 24,
+    "selling_price_per_kg": 40,
+    "origin_id": "CENTRAL",
+    "handling_time_hours": 1,
+    "handling_cost_per_kg": 1
+  },
+  {
+    "batch_id": "B003",
+    "commodity": "Spinach",
+    "quantity_kg": 80,
+    "remaining_shelf_life_hours": 6,
+    "selling_price_per_kg": 25,
+    "origin_id": "CENTRAL",
+    "handling_time_hours": 0.5,
+    "handling_cost_per_kg": 1
+  },
+  {
+    "batch_id": "B004",
+    "commodity": "Tomatoes",
+    "quantity_kg": 70,
+    "remaining_shelf_life_hours": 30,
+    "selling_price_per_kg": 29,
+    "origin_id": "CENTRAL",
+    "handling_time_hours": 1,
+    "handling_cost_per_kg": 1
+  },
+  {
+    "batch_id": "B005",
+    "commodity": "Mangoes",
+    "quantity_kg": 90,
+    "remaining_shelf_life_hours": 48,
+    "selling_price_per_kg": 55,
+    "origin_id": "CENTRAL",
+    "handling_time_hours": 1.5,
+    "handling_cost_per_kg": 1.5
+  },
+  {
+    "batch_id": "B006",
+    "commodity": "Spinach",
+    "quantity_kg": 60,
+    "remaining_shelf_life_hours": 10,
+    "selling_price_per_kg": 24,
+    "origin_id": "CENTRAL",
+    "handling_time_hours": 0.5,
+    "handling_cost_per_kg": 1
+  }
+]

@@ -1,0 +1,6 @@
+[
+  {"destination_id":"D001","name":"Chennai Central Market","demand_by_commodity":{"Tomatoes":90,"Bananas":35,"Spinach":35,"Mangoes":20},"price_by_commodity":{"Tomatoes":32,"Bananas":43,"Spinach":28,"Mangoes":60},"delivery_window_hours":18},
+  {"destination_id":"D002","name":"Tambaram Fresh Hub","demand_by_commodity":{"Tomatoes":60,"Bananas":45,"Spinach":20,"Mangoes":35},"price_by_commodity":{"Tomatoes":31,"Bananas":42,"Spinach":27,"Mangoes":58},"delivery_window_hours":20},
+  {"destination_id":"D003","name":"OMR Retail Cluster","demand_by_commodity":{"Tomatoes":50,"Bananas":25,"Spinach":25,"Mangoes":40},"price_by_commodity":{"Tomatoes":34,"Bananas":41,"Spinach":29,"Mangoes":62},"delivery_window_hours":16},
+  {"destination_id":"D004","name":"Koyambedu Wholesale","demand_by_commodity":{"Tomatoes":80,"Bananas":60,"Spinach":15,"Mangoes":30},"price_by_commodity":{"Tomatoes":30,"Bananas":44,"Spinach":26,"Mangoes":57},"delivery_window_hours":22}
+]
