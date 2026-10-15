@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Activity, ArrowDownRight, ArrowRight, ArrowUpRight, BarChart3, Bell, Boxes,
-  Check, ChevronDown, CircleHelp, Clock3, Download, FileUp, Info, Leaf, MapPin,
+  Activity, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, BarChart3, Bell, Boxes,
+  Check, ChevronDown, ChevronUp, CircleHelp, Clock3, Download, FileUp, Info, Leaf, MapPin,
   Menu, Package, Play, RefreshCw, Route, Search, Send, ShieldCheck, Sparkles,
   Sprout, TrendingUp, Truck, Upload, Warehouse, X
 } from 'lucide-react';
@@ -16,6 +16,9 @@ type Batch = {
   origin_id: string;
   handling_time_hours: number;
   handling_cost_per_kg: number;
+  unit_cost_per_kg?: number;
+  harvest_date?: string;
+  spoilage_threshold?: number;
   temperature_celsius?: number;
 };
 
@@ -48,6 +51,18 @@ type DiscountRecommendation = {
   type: string;
   is_confirmed_sale: boolean;
   status: string;
+  action?: string;
+  reason: string;
+};
+
+type QuarantinedWaste = {
+  batch_id: string;
+  commodity: string;
+  quantity_kg: number;
+  status: string;
+  remaining_shelf_life_hours?: number;
+  handling_time_hours?: number;
+  action?: string;
   reason: string;
 };
 
@@ -58,6 +73,7 @@ type PlanMetrics = {
   unallocated_kg: number;
   expired_stock_kg: number;
   spoiled_kg: number;
+  immediate_spoilage_kg?: number;
   fresh_surplus_kg: number;
   initial_demand_kg: number;
   unmet_demand_kg: number;
@@ -69,7 +85,11 @@ type PlanMetrics = {
   gross_revenue: number;
   transport_cost: number;
   handling_cost: number;
+  procurement_cost: number;
+  spoilage_penalties: number;
+  discount_cost?: number;
   net_revenue: number;
+  net_profit: number;
   potential_discount_revenue: number;
   constraint_violations: number;
 };
@@ -79,8 +99,11 @@ type Plan = {
   strategy_description?: string;
   allocations: any[];
   discount_recommendations: DiscountRecommendation[];
+  quarantined_waste?: QuarantinedWaste[];
+  immediate_spoilage_kg?: number;
   metrics: PlanMetrics;
   assumptions: string[];
+  solver_used?: string;
 };
 
 type ImprovementSummary = {
@@ -92,10 +115,15 @@ type ImprovementSummary = {
   delivered_change_kg: number;
   net_revenue_change_amount: number;
   net_revenue_change_percent: number;
+  net_profit_change_amount?: number;
+  net_profit_change_percent?: number;
   transport_cost_change_amount: number;
   transport_cost_change_percent: number;
   handling_cost_change_amount: number;
   handling_cost_change_percent: number;
+  procurement_cost_change_amount?: number;
+  spoilage_penalties_change_amount?: number;
+  spoilage_penalties_change_percent?: number;
   unmet_demand_reduction_kg: number;
   unused_capacity_reduction_kg: number;
 };
@@ -104,6 +132,10 @@ type PlanResponse = {
   baseline: Plan;
   optimized: Plan;
   improvement_summary: ImprovementSummary;
+  quarantined_waste?: QuarantinedWaste[];
+  immediate_spoilage_kg?: number;
+  solver_mode?: string;
+  solver_used?: string;
   scenario?: any;
   scenario_id?: string;
   scenario_name?: string;
@@ -179,6 +211,8 @@ function App() {
   const [asking, setAsking] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState('');
+  const [solverMode, setSolverMode] = useState<'heuristic' | 'milp'>('heuristic');
+  const [quarantineExpanded, setQuarantineExpanded] = useState<boolean>(true);
 
   // Upload modal state
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -210,7 +244,7 @@ function App() {
     try {
       const [d, p, scens] = await Promise.all([
         request('/api/initial-data'),
-        request('/api/optimize', {}),
+        request('/api/optimize', { solver_mode: solverMode }),
         request('/api/scenarios').catch(() => ({ scenarios: [] })),
       ]);
       setData(d);
@@ -258,14 +292,20 @@ function App() {
     { label: 'AI copilot', icon: Sparkles },
   ];
 
-  const runOptimize = async () => {
+  const runOptimize = async (overrideMode?: 'heuristic' | 'milp') => {
+    const mode = overrideMode || solverMode;
     try {
-      const p = await request('/api/optimize', {});
+      const p = await request('/api/optimize', { solver_mode: mode });
       setPlan(p);
-      notify('Distribution plan recalculated with latest network data');
+      notify(`Plan calculated using ${mode === 'milp' ? 'Exact MILP Solver' : 'Heuristic Engine'}`);
     } catch (e: any) {
       notify(e.message);
     }
+  };
+
+  const handleSolverModeChange = (mode: 'heuristic' | 'milp') => {
+    setSolverMode(mode);
+    runOptimize(mode);
   };
 
   const handleRefreshPrices = async () => {
@@ -332,9 +372,10 @@ function App() {
         demand_change_percent: demand,
         travel_delay_hours: delay,
         capacity_change_percent: capacity,
+        solver_mode: solverMode,
       });
       setScenario(res);
-      notify('Custom scenario simulation completed');
+      notify(`Custom scenario simulated with ${solverMode.toUpperCase()} solver`);
     } catch (e: any) {
       notify(e.message);
     }
@@ -343,14 +384,14 @@ function App() {
   const runPresetScenario = async (scenId: string) => {
     setSelectedScenarioId(scenId);
     try {
-      const res = await request('/api/scenarios/run', { scenario_id: scenId });
+      const res = await request('/api/scenarios/run', { scenario_id: scenId, solver_mode: solverMode });
       setScenario(res);
       if (res.scenario) {
         setDemand(res.scenario.demand_change_percent || 0);
         setDelay(res.scenario.travel_delay_hours || 0);
         setCapacity(res.scenario.capacity_change_percent || 0);
       }
-      notify(`Executed scenario: ${res.scenario_name}`);
+      notify(`Executed scenario: ${res.scenario_name || scenId} (${solverMode.toUpperCase()})`);
     } catch (e: any) {
       notify(e.message);
     }
@@ -469,6 +510,30 @@ function App() {
           </div>
 
           <div className="top-actions">
+            {/* Solver Mode Segmented Toggle */}
+            <div className="solver-mode-toggle" title="Switch Optimization Solver Engine">
+              <button
+                type="button"
+                className={`solver-toggle-btn ${solverMode === 'heuristic' ? 'active' : ''}`}
+                onClick={() => handleSolverModeChange('heuristic')}
+              >
+                Heuristic Engine
+              </button>
+              <button
+                type="button"
+                className={`solver-toggle-btn ${solverMode === 'milp' ? 'active' : ''}`}
+                onClick={() => handleSolverModeChange('milp')}
+              >
+                <Sparkles size={12} /> Exact MILP
+              </button>
+            </div>
+
+            {plan?.optimized?.solver_used && (
+              <span className="solver-tag" title="Solver executed for current plan">
+                {plan.optimized.solver_used}
+              </span>
+            )}
+
             {/* Live Data Provider Badge */}
             <div className={`live-pill status-${overallStatus}`} title={`Data Source: ${statusLabel}`}>
               <span /> {statusLabel}
@@ -541,7 +606,7 @@ function App() {
               <button className="btn btn-light" onClick={exportCsv}>
                 <Download size={16} /> Export CSV
               </button>
-              <button className="btn btn-primary" onClick={runOptimize} disabled={loading}>
+              <button className="btn btn-primary" onClick={() => runOptimize()} disabled={loading}>
                 <Sparkles size={16} /> Recalculate plan
               </button>
             </div>
@@ -621,6 +686,9 @@ function App() {
                       tone="violet"
                     />
                   </div>
+
+                  {/* MoFPI Economic Objective P&L Cards */}
+                  <PnlCards m={m} />
 
                   {/* Charts & Freshness Watch */}
                   <div className="dashboard-grid">
@@ -860,6 +928,14 @@ function App() {
                   <div className="table-note">
                     <ShieldCheck size={15} /> All inventory inputs are validated for positive weights, positive shelf life, and non-negative pricing.
                   </div>
+
+                  {/* Immediate Waste / Compost Quarantine Section */}
+                  <QuarantinedWasteTable
+                    waste={plan?.quarantined_waste || plan?.optimized?.quarantined_waste || []}
+                    immediateSpoilageKg={plan?.immediate_spoilage_kg || plan?.optimized?.immediate_spoilage_kg || 0}
+                    expanded={quarantineExpanded}
+                    onToggle={() => setQuarantineExpanded(!quarantineExpanded)}
+                  />
                 </section>
               )}
 
@@ -898,6 +974,9 @@ function App() {
                     />
                   </div>
 
+                  {/* MoFPI Economic Objective P&L Cards */}
+                  <PnlCards m={m} />
+
                   {/* Allocation Table */}
                   <section className="panel allocation-panel">
                     <div className="panel-heading">
@@ -905,12 +984,20 @@ function App() {
                         <h3>Explainable allocation plan</h3>
                         <p>Route-scarcity reservation prioritizes fragile produce; full arrival time and feasibility audit included</p>
                       </div>
-                      <button className="btn btn-primary" onClick={runOptimize}>
+                      <button className="btn btn-primary" onClick={() => runOptimize()}>
                         <RefreshCw size={15} /> Recalculate
                       </button>
                     </div>
                     <AllocationTable plan={plan?.optimized} detailed />
                   </section>
+
+                  {/* Quarantined Waste (Organic Compost & Biogas Diversion) */}
+                  <QuarantinedWasteTable
+                    waste={plan?.quarantined_waste || plan?.optimized?.quarantined_waste || []}
+                    immediateSpoilageKg={plan?.immediate_spoilage_kg || plan?.optimized?.immediate_spoilage_kg || 0}
+                    expanded={quarantineExpanded}
+                    onToggle={() => setQuarantineExpanded(!quarantineExpanded)}
+                  />
 
                   {/* Financial Breakdown & Discount Watch */}
                   <div className="two-panels">
@@ -1167,6 +1254,19 @@ function App() {
                               <b>{fmt(scenario.optimized.metrics.unmet_demand_kg)} kg</b>
                             </div>
                           </div>
+
+                          {/* Scenario Economic P&L Cards */}
+                          <div style={{ marginTop: 14 }}>
+                            <PnlCards m={scenario.optimized.metrics} />
+                          </div>
+
+                          {/* Scenario Quarantined Waste */}
+                          <QuarantinedWasteTable
+                            waste={scenario.quarantined_waste || scenario.optimized?.quarantined_waste || []}
+                            immediateSpoilageKg={scenario.immediate_spoilage_kg || scenario.optimized?.immediate_spoilage_kg || 0}
+                            expanded={quarantineExpanded}
+                            onToggle={() => setQuarantineExpanded(!quarantineExpanded)}
+                          />
 
                           {/* Assumptions */}
                           <div className="assumption-box" style={{ marginTop: 12 }}>
@@ -1519,6 +1619,129 @@ function Slider({
         <span>{max}{suffix}</span>
       </div>
       <p>{note}</p>
+    </div>
+  );
+}
+
+function PnlCards({ m }: { m?: PlanMetrics }) {
+  if (!m) return null;
+  return (
+    <div className="pnl-grid">
+      <div className="pnl-card profit">
+        <div className="pnl-label">
+          <span>MoFPI Net Economic Profit</span>
+          <TrendingUp size={14} color="#15803d" />
+        </div>
+        <span className="pnl-value profit">{money(m.net_profit)}</span>
+        <span className="pnl-sub">
+          Delivered Revenue - Transport - Handling - COGS - Spoilage Penalties
+        </span>
+      </div>
+
+      <div className="pnl-card cogs">
+        <div className="pnl-label">
+          <span>Delivered Produce COGS</span>
+          <Package size={14} color="#475569" />
+        </div>
+        <span className="pnl-value cogs">{money(m.procurement_cost)}</span>
+        <span className="pnl-sub">
+          Farmer acquisition cost for {fmt(m.delivered_kg)} kg dispatched produce
+        </span>
+      </div>
+
+      <div className="pnl-card spoilage">
+        <div className="pnl-label">
+          <span>Spoilage Write-Off & Disposal</span>
+          <AlertTriangle size={14} color="#b91c1c" />
+        </div>
+        <span className="pnl-value spoilage">-{money(m.spoilage_penalties)}</span>
+        <span className="pnl-sub">
+          Lost inventory value + ₹5/kg environmental composting fee
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function QuarantinedWasteTable({
+  waste = [],
+  immediateSpoilageKg = 0,
+  expanded,
+  onToggle,
+}: {
+  waste?: QuarantinedWaste[];
+  immediateSpoilageKg?: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  if (!waste || waste.length === 0) return null;
+  return (
+    <div className="quarantine-panel">
+      <div className="quarantine-header" onClick={onToggle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="quarantine-badge">
+            <Leaf size={12} /> IMMEDIATE COMPOST WASTE
+          </span>
+          <b style={{ fontSize: 12, color: '#991b1b' }}>
+            Quarantined Waste (Organic Compost & Biogas Diversion)
+          </b>
+          <span style={{ fontSize: 11, color: '#b91c1c' }}>
+            ({waste.length} batches · {fmt(immediateSpoilageKg)} kg)
+          </span>
+        </div>
+        <button
+          style={{ background: 'transparent', border: 0, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 4 }}
+          type="button"
+        >
+          <small style={{ fontWeight: 700 }}>{expanded ? 'Collapse' : 'Expand'}</small>
+          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+      </div>
+      {expanded && (
+        <div className="table-scroll" style={{ background: '#fff' }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Batch ID</th>
+                <th>Commodity</th>
+                <th>Quantity</th>
+                <th>Shelf Life vs Buffer</th>
+                <th>Classification</th>
+                <th>Action & Grounded Justification</th>
+              </tr>
+            </thead>
+            <tbody>
+              {waste.map(w => (
+                <tr key={w.batch_id}>
+                  <td><b className="batch-code" style={{ color: '#991b1b' }}>{w.batch_id}</b></td>
+                  <td>
+                    <div className="commodity-cell">
+                      <span className="mini-leaf" style={{ background: '#fee2e2', color: '#991b1b' }}>
+                        <Leaf size={14} />
+                      </span>
+                      {w.commodity}
+                    </div>
+                  </td>
+                  <td><b>{fmt(w.quantity_kg)} kg</b></td>
+                  <td>
+                    <span style={{ fontSize: 10, color: '#991b1b', fontWeight: 600 }}>
+                      {fmt(w.remaining_shelf_life_hours || 0)}h &le; {fmt(w.handling_time_hours || 0)}h buffer
+                    </span>
+                  </td>
+                  <td>
+                    <span className="status-tag status-risk" style={{ background: '#fee2e2', color: '#991b1b' }}>
+                      {w.status}
+                    </span>
+                  </td>
+                  <td className="reason-cell" style={{ color: '#7f1d1d' }}>
+                    {w.reason || w.action}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

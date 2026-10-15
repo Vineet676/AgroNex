@@ -8,6 +8,7 @@ class DisruptionRequest(BaseModel):
     demand_change_percent: float = Field(default=0, ge=-100, le=500)
     travel_delay_hours: float = Field(default=0, ge=0, le=168)
     capacity_change_percent: float = Field(default=0, ge=-100, le=500)
+    solver_mode: str = Field(default="heuristic", description="Optimization solver mode: 'heuristic' or 'milp'")
 
 
 class ExplainRequest(BaseModel):
@@ -17,6 +18,7 @@ class ExplainRequest(BaseModel):
 
 class ScenarioSelectRequest(BaseModel):
     scenario_id: str = Field(min_length=1)
+    solver_mode: str = Field(default="heuristic", description="Optimization solver mode: 'heuristic' or 'milp'")
 
 
 class CsvUploadRequest(BaseModel):
@@ -87,5 +89,13 @@ class DistributionPlanResponse(BaseModel):
     unused_route_capacity: dict[str, float] = Field(default_factory=dict)
     planning_horizon_hours: float = 24.0
     assumptions: list[str] = Field(default_factory=list)
+    solver_used: str = "HEURISTIC"
+
+
+class OptimizeRequest(BaseModel):
+    inventory: list[dict[str, Any]] | None = None
+    destinations: list[dict[str, Any]] | None = None
+    transport: list[dict[str, Any]] | None = None
+    solver_mode: str = Field(default="heuristic", description="Optimization solver mode: 'heuristic' or 'milp'")
 
 

@@ -15,6 +15,11 @@ from typing import Any
 
 from .validation import validate_planning_dataset, ValidationError
 
+try:
+    from .solver_milp import solve_distribution_milp
+except ImportError:
+    from solver_milp import solve_distribution_milp
+
 HORIZON_HOURS = 24.0
 DEFAULT_DISPOSAL_FEE_PER_KG = 5.0  # ₹5/kg organic waste disposal and handling fee
 DEFAULT_COGS_RATIO = 0.60          # Fallback: acquisition cost is 60% of baseline price if unit_cost_per_kg is missing
@@ -116,6 +121,7 @@ def plan_distribution(
     transport: list[dict],
     strategy: str = "optimized",
     horizon_hours: float = HORIZON_HOURS,
+    solver_mode: str = "heuristic",
 ) -> dict[str, Any]:
     """Computes a transparent, constraint-satisfying produce distribution plan.
     
@@ -123,7 +129,7 @@ def plan_distribution(
     - 'baseline': Greedy first-available allocation to nearest feasible destination.
       No margin ranking, no scarcity preservation.
     - 'optimized': Route-scarcity reservation prioritizing vulnerable batches on scarce corridors,
-      maximizing net margin after transport and handling.
+      maximizing net margin after transport and handling, or exact global MILP optimization.
     """
     if strategy not in {"baseline", "optimized"}:
         raise ValueError("strategy must be 'baseline' or 'optimized'")
@@ -189,6 +195,23 @@ def plan_distribution(
             })
         else:
             active_batches.append(b)
+
+    # 2. Exact MILP solver branch (if requested for optimized plan)
+    if strategy == "optimized" and solver_mode.lower() == "milp":
+        milp_result = solve_distribution_milp(
+            active_batches=active_batches,
+            destinations=dests,
+            routes=routes,
+            quarantined_waste_records=quarantined_waste_records,
+            immediate_spoilage_kg=immediate_spoilage_kg,
+            horizon_hours=horizon_hours,
+            default_disposal_fee=DEFAULT_DISPOSAL_FEE_PER_KG,
+            default_cogs_ratio=DEFAULT_COGS_RATIO,
+            discount_calculator=calculate_discount_recommendation,
+        )
+        if milp_result is not None:
+            milp_result["solver_used"] = "MILP_PULP"
+            return milp_result
 
     # Pre-calculate feasible route options for each active batch to measure Route Scarcity
     # A route is feasible if origin matches, arrival time <= batch shelf life and delivery window,
@@ -524,6 +547,10 @@ def plan_distribution(
         "Discount recommendations depend strictly on urgency tiers and are NOT counted as realized revenue until sold",
     ]
 
+    solver_used = "BASELINE_HEURISTIC" if strategy == "baseline" else (
+        "HEURISTIC_FALLBACK" if solver_mode.lower() == "milp" else "HEURISTIC"
+    )
+
     return {
         "strategy": strategy,
         "strategy_description": strategy_desc,
@@ -544,6 +571,7 @@ def plan_distribution(
         },
         "planning_horizon_hours": horizon_hours,
         "assumptions": assumptions,
+        "solver_used": solver_used,
     }
 
 
@@ -621,16 +649,19 @@ def build_plan(
     destinations: list[dict],
     transport: list[dict],
     horizon_hours: float = HORIZON_HOURS,
+    solver_mode: str = "heuristic",
 ) -> dict:
     """Builds both baseline and optimized distribution plans and returns side-by-side comparison."""
-    baseline = plan_distribution(inventory, destinations, transport, "baseline", horizon_hours)
-    optimized = plan_distribution(inventory, destinations, transport, "optimized", horizon_hours)
+    baseline = plan_distribution(inventory, destinations, transport, "baseline", horizon_hours, solver_mode="heuristic")
+    optimized = plan_distribution(inventory, destinations, transport, "optimized", horizon_hours, solver_mode=solver_mode)
     return {
         "baseline": baseline,
         "optimized": optimized,
         "improvement_summary": compare_plans(baseline, optimized),
         "quarantined_waste": optimized.get("quarantined_waste", []),
         "immediate_spoilage_kg": optimized.get("immediate_spoilage_kg", 0.0),
+        "solver_mode": solver_mode,
+        "solver_used": optimized.get("solver_used", "HEURISTIC"),
     }
 
 

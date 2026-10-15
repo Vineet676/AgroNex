@@ -52,3 +52,28 @@
 .cost-breakdown-item{background:#f9fbf8;border:1px solid #eef2eb;border-radius:9px;padding:10px}
 .cost-breakdown-item span{display:block;font-size:9px;color:#859487}
 .cost-breakdown-item b{font-size:12px;color:#203728;display:block;margin-top:4px}
+
+/* Solver Mode Segmented Toggle */
+.solver-mode-toggle{display:inline-flex;align-items:center;background:#edf3ea;border:1px solid #dbe6d7;border-radius:10px;padding:3px;gap:3px}
+.solver-toggle-btn{border:0;background:transparent;color:#556c5c;padding:5px 12px;border-radius:7px;font-size:10px;font-weight:700;display:inline-flex;align-items:center;gap:5px;transition:all .15s ease}
+.solver-toggle-btn:hover{color:#1e5e39}
+.solver-toggle-btn.active{background:#ffffff;color:#1a5633;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.solver-tag{font-size:8.5px;font-weight:800;letter-spacing:.5px;padding:3px 7px;border-radius:5px;background:#dcfce7;color:#166534;border:1px solid #bbf7d0;display:inline-flex;align-items:center;gap:4px}
+
+/* P&L Financial Cards */
+.pnl-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin-bottom:18px}
+.pnl-card{background:#fff;border:1px solid #e2e8df;border-radius:13px;padding:16px 18px;box-shadow:0 2px 8px rgba(29,53,42,.04);position:relative;overflow:hidden}
+.pnl-card.profit{background:linear-gradient(135deg,#f0fdf4 0%,#ffffff 100%);border-color:#86efac}
+.pnl-card.cogs{background:#fff;border-color:#e5e7eb}
+.pnl-card.spoilage{background:linear-gradient(135deg,#fef2f2 0%,#ffffff 100%);border-color:#fecaca}
+.pnl-label{display:flex;align-items:center;justify-content:space-between;font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:#64748b;margin-bottom:8px}
+.pnl-value{font:800 24px Manrope,sans-serif;letter-spacing:-.8px;display:block}
+.pnl-value.profit{color:#15803d}
+.pnl-value.cogs{color:#334155}
+.pnl-value.spoilage{color:#b91c1c}
+.pnl-sub{font-size:9.5px;color:#6b7280;margin-top:6px;display:block;line-height:1.4}
+
+/* Quarantined Waste Section */
+.quarantine-panel{border:1px solid #fecaca;background:#fffafa;border-radius:13px;margin-top:18px;overflow:hidden}
+.quarantine-header{padding:13px 18px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;background:#fef2f2;border-bottom:1px solid #fee2e2}
+.quarantine-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:6px;font-size:9px;font-weight:800;background:#fee2e2;color:#991b1b;border:1px solid #fecaca}

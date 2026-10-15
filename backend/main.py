@@ -144,7 +144,7 @@ def run_named_scenario(request: ScenarioSelectRequest):
         destinations, transport = apply_disruption(
             current["destinations"], current["transport"], scen["disruption"]
         )
-        plan = build_plan(current["inventory"], destinations, transport)
+        plan = build_plan(current["inventory"], destinations, transport, solver_mode=request.solver_mode)
         plan["scenario"] = scen["disruption"]
         plan["scenario_id"] = scen["id"]
         plan["scenario_name"] = scen["name"]
@@ -159,16 +159,19 @@ def run_named_scenario(request: ScenarioSelectRequest):
 
 
 @app.post("/api/optimize")
+@app.post("/api/plan")
 def optimize(payload: dict | None = None):
     try:
         data = data_manager.get_dataset()
+        solver_mode = "heuristic"
         if payload:
+            solver_mode = payload.get("solver_mode", "heuristic")
             for key in ("inventory", "destinations", "transport"):
                 if key in payload:
                     if not isinstance(payload[key], list):
                         raise HTTPException(status_code=422, detail=f"{key} must be a list")
                     data[key] = payload[key]
-        return build_plan(data["inventory"], data["destinations"], data["transport"])
+        return build_plan(data["inventory"], data["destinations"], data["transport"], solver_mode=solver_mode)
     except HTTPException:
         raise
     except ValidationError as exc:
@@ -184,7 +187,7 @@ def simulate(request: DisruptionRequest):
         destinations, transport = apply_disruption(
             data["destinations"], data["transport"], request.model_dump()
         )
-        result = build_plan(data["inventory"], destinations, transport)
+        result = build_plan(data["inventory"], destinations, transport, solver_mode=request.solver_mode)
         result["scenario"] = request.model_dump()
         result["scenario_label"] = "Disruption scenario"
         result["scenario_assumptions"] = [
@@ -192,6 +195,7 @@ def simulate(request: DisruptionRequest):
             f"Transit delay of +{request.travel_delay_hours:g}h on all corridors",
             f"Transport capacity adjusted by {request.capacity_change_percent:+g}%",
             "Hard shelf-life and delivery window deadlines enforced strictly",
+            f"Solver mode: {request.solver_mode.upper()}",
         ]
         return result
     except ValidationError as exc:
