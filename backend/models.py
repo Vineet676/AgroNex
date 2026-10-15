@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
@@ -9,4 +12,17 @@ class DisruptionRequest(BaseModel):
 
 class ExplainRequest(BaseModel):
     question: str = Field(min_length=1, max_length=1000)
-    plan: dict | None = None
+    plan: dict[str, Any] | None = None
+
+
+class ScenarioSelectRequest(BaseModel):
+    scenario_id: str = Field(min_length=1)
+
+
+class CsvUploadRequest(BaseModel):
+    entity: Literal["inventory", "destinations", "transport"]
+    csv_content: str = Field(min_length=5)
+
+
+class DataRefreshRequest(BaseModel):
+    simulate_failure: bool = Field(default=False)
