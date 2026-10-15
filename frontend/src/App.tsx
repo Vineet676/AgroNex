@@ -179,10 +179,14 @@ function App() {
   const [asking, setAsking] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState('');
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
 
   // Upload modal state
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [uploadEntity, setUploadEntity] = useState<'inventory' | 'destinations' | 'transport'>('inventory');
+  const [uploadEntity, setUploadEntity] = useState<'inventory' | 'destinations' | 'transport' | 'combined'>('combined');
   const [uploadCsvText, setUploadCsvText] = useState('');
   const [uploading, setUploading] = useState(false);
 
@@ -235,7 +239,7 @@ function App() {
 
   const filtered = useMemo(() => inventory.filter(b =>
     `${b.batch_id} ${b.commodity} ${b.origin_id}`.toLowerCase().includes(query.toLowerCase()) &&
-    (filter === 'All batches' || (filter === 'At risk' && b.remaining_shelf_life_hours <= 12) || (filter === 'Fresh' && b.remaining_shelf_life_hours > 24))
+    (filter === 'All batches' || ((filter === 'At risk' || filter === 'At risk (≤12h)') && b.remaining_shelf_life_hours <= 12) || ((filter === 'Fresh' || filter === 'Fresh (>24h)') && b.remaining_shelf_life_hours > 24))
   ), [inventory, query, filter]);
 
   const chartData = useMemo(() => {
@@ -317,7 +321,7 @@ function App() {
       setDataStatus(res.data_source_status);
       setShowUploadModal(false);
       setUploadCsvText('');
-      notify(`Successfully imported ${uploadEntity} CSV`);
+      notify(`Successfully imported consolidated supply network CSV`);
       runOptimize();
     } catch (e: any) {
       notify(`Upload failed: ${e.message}`);
@@ -361,10 +365,17 @@ function App() {
     setAsking(true);
     setAnswer('');
     try {
-      const r = await request('/api/explain', { question: q, plan: plan?.optimized });
-      setAnswer(`${r.answer}\n\nSource: ${r.mode}. Analysis derived from validated network constraints.`);
+      const lower = q.toLowerCase();
+      if (/(spoil|expire|go bad|freshness|which (vegetable|produce|batch)|at risk)/i.test(lower) && inventory.length) {
+        const urgent = [...inventory].sort((a, b) => a.remaining_shelf_life_hours - b.remaining_shelf_life_hours)[0];
+        const feasible = (data?.transport || []).some(r => r.origin_id === urgent.origin_id && (r.travel_time_hours + urgent.handling_time_hours) < urgent.remaining_shelf_life_hours);
+        setAnswer(`${urgent.commodity} (${urgent.batch_id}) is currently the most urgent batch, with ${fmt(urgent.remaining_shelf_life_hours)} hours of shelf life remaining and ${fmt(urgent.quantity_kg)} kg in stock. ${feasible ? 'At least one route from its origin appears to allow arrival and handling before expiry; confirm destination demand and capacity in the distribution plan.' : 'No route from its origin was found that clearly completes transit and handling before expiry. Check alternate routes or local clearance options.'} This assessment uses the current inventory snapshot; it is a risk ranking, not a guarantee of spoilage.`);
+      } else {
+        const r = await request('/api/explain', { question: q, plan: plan?.optimized });
+        setAnswer(`${r.answer || 'The planner returned no explanation. Try refreshing the data and asking again.'}\n\nSource: ${r.mode || 'AgroNex fallback'}. Analysis derived from available network data.`);
+      }
     } catch (e: any) {
-      setAnswer(e.message);
+      setAnswer(`I couldn't reach the explanation service (${e.message}). Try refreshing the data. You can still review the shortest-shelf-life batches in Inventory.`);
     } finally {
       setAsking(false);
       setQuestion('');
@@ -409,15 +420,17 @@ function App() {
           </button>
         </div>
 
-        <div className="workspace">
-          <div className="workspace-icon">
-            <Sprout size={18} />
-          </div>
-          <div>
-            <b>AgroNex Regional Supply</b>
-            <small>Active Operations Workspace</small>
-          </div>
-          <ChevronDown size={15} />
+        <div className="workspace-wrap">
+          <button className="workspace" type="button" aria-expanded={workspaceOpen} onClick={() => setWorkspaceOpen(v => !v)}>
+            <div className="workspace-icon"><Sprout size={18} /></div>
+            <div><b>AgroNex Regional Supply</b><small>Active Operations Workspace</small></div>
+            <ChevronDown size={15} style={{ transform: workspaceOpen ? 'rotate(180deg)' : undefined, transition: 'transform .18s' }} />
+          </button>
+          {workspaceOpen && <div className="workspace-menu">
+            <button type="button" onClick={() => { setPage('Overview'); setWorkspaceOpen(false); }}>Regional Supply <small>Current workspace</small></button>
+            <button type="button" onClick={() => { setPage('Inventory'); setWorkspaceOpen(false); }}>Inventory operations <small>View stock and freshness</small></button>
+            <button type="button" onClick={() => { setPage('Distribution plan'); setWorkspaceOpen(false); }}>Distribution planning <small>Review dispatch plan</small></button>
+          </div>}
         </div>
 
         <div className="nav-label">WORKSPACE</div>
@@ -447,13 +460,15 @@ function App() {
             </button>
           </div>
 
-          <div className="profile">
-            <div className="avatar">AN</div>
-            <div>
-              <b>AgroNex Operations</b>
-              <small>Distribution Control Hub</small>
-            </div>
-            <span className="online-dot" />
+          <div className="profile-wrap">
+            <button className="profile" type="button" onClick={() => setProfileOpen(v => !v)} aria-expanded={profileOpen}>
+              <div className="avatar">AN</div><div><b>AgroNex Operations</b><small>Distribution Control Hub</small></div><span className="online-dot" />
+            </button>
+            {profileOpen && <div className="workspace-menu profile-menu">
+              <button type="button" onClick={() => { setPage('Overview'); setProfileOpen(false); }}>Dashboard overview<small>Return to overview</small></button>
+              <button type="button" onClick={() => { setShowUploadModal(true); setProfileOpen(false); }}>Data settings<small>Import supply data</small></button>
+              <button type="button" onClick={() => { setProfileOpen(false); notify('AgroNex demo workspace · local session'); }}>About this workspace<small>AgroNex operations demo</small></button>
+            </div>}
           </div>
         </div>
       </aside>
@@ -465,14 +480,15 @@ function App() {
             <Menu />
           </button>
           <div className="crumb">
-            Workspace <span>/</span> <b>{page}</b>
+            <button type="button" onClick={() => setPage('Overview')}>Workspace</button> <span>/</span> <b>{page}</b>
           </div>
 
           <div className="top-actions">
             {/* Live Data Provider Badge */}
-            <div className={`live-pill status-${overallStatus}`} title={`Data Source: ${statusLabel}`}>
+            <button type="button" className={`live-pill status-${overallStatus}`} title="Show data validation details" onClick={() => setStatusOpen(v => !v)} aria-expanded={statusOpen}>
               <span /> {statusLabel}
-            </div>
+            </button>
+            {statusOpen && <div className="toolbar-popover status-popover"><b>Data validation</b><p>{dataStatus?.organization || 'AgroNex Regional Supply'}</p><p>Inventory: {dataStatus?.providers?.inventory?.status || 'snapshot'} · Prices: {dataStatus?.providers?.prices?.status || 'snapshot'} · Routes: {dataStatus?.providers?.routes?.status || 'snapshot'}</p><small>Last update: {dataStatus?.last_updated || 'No timestamp available'}</small></div>}
 
             {/* Last Updated Timestamp */}
             <div className="last-updated-text" title={`Last synced: ${dataStatus?.last_updated || 'Active'}`}>
@@ -511,11 +527,12 @@ function App() {
               <RefreshCw size={16} />
             </button>
 
-            <button className="icon-button notification" title="Notifications">
-              <Bell size={16} />
-              <i />
+            <button className="icon-button notification" title="Notifications" onClick={() => setNotificationsOpen(v => !v)} aria-expanded={notificationsOpen}>
+              <Bell size={16} /><i />
             </button>
-            <div className="user-mini">AN</div>
+            {notificationsOpen && <div className="toolbar-popover notification-popover"><b>Operations alerts</b><p>{inventory.filter(b => b.remaining_shelf_life_hours <= 12).length} batch(es) have 12 hours or less of shelf life.</p><button type="button" onClick={() => { setPage('Inventory'); setFilter('At risk'); setNotificationsOpen(false); }}>Review at-risk inventory</button></div>}
+            <button className="user-mini" type="button" title="Workspace profile" onClick={() => setProfileOpen(v => !v)} aria-expanded={profileOpen}>AN</button>
+            {profileOpen && <div className="toolbar-popover account-popover"><b>AgroNex Operations</b><p>Regional supply demo workspace</p><button type="button" onClick={() => { setPage('Overview'); setProfileOpen(false); }}>Go to overview</button></div>}
           </div>
         </header>
 
@@ -795,9 +812,9 @@ function App() {
                       />
                     </div>
                     <select value={filter} onChange={e => setFilter(e.target.value)}>
-                      <option>All batches</option>
-                      <option>At risk (&le;12h)</option>
-                      <option>Fresh (&gt;24h)</option>
+                      <option value="All batches">All batches</option>
+                      <option value="At risk (≤12h)">At risk (≤12h)</option>
+                      <option value="Fresh (>24h)">Fresh (&gt;24h)</option>
                     </select>
                   </div>
 
@@ -1328,17 +1345,7 @@ function App() {
             </div>
 
             <div className="modal-body">
-              <div className="tab-bar">
-                {(['inventory', 'destinations', 'transport'] as const).map(tab => (
-                  <button
-                    key={tab}
-                    className={`tab-btn ${uploadEntity === tab ? 'active' : ''}`}
-                    onClick={() => { setUploadEntity(tab); setUploadCsvText(''); }}
-                  >
-                    {tab === 'inventory' ? 'Inventory Batches' : tab === 'destinations' ? 'Destination Demand' : 'Transport Routes'}
-                  </button>
-                ))}
-              </div>
+              <div className="upload-format-note"><b>One file for the whole network</b><p>Upload a consolidated CSV containing batch, destination demand, selling price, travel time, transport cost, capacity, and handling-time columns. All three data groups are validated and updated together.</p></div>
 
               <label className="upload-dropzone">
                 <input
@@ -1356,17 +1363,13 @@ function App() {
                 className="csv-textarea"
                 value={uploadCsvText}
                 onChange={e => setUploadCsvText(e.target.value)}
-                placeholder={`Paste ${uploadEntity} CSV text here...`}
+                placeholder={'Paste the consolidated AgroNex CSV here...'}
               />
             </div>
 
             <div className="modal-foot">
-              <a
-                href={`${API}/api/data/template/${uploadEntity}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <Download size={13} /> Download {uploadEntity} CSV Template
+              <a href="/agronex-demo-template.csv" download>
+                <Download size={13} /> Download consolidated CSV template
               </a>
 
               <div className="modal-actions">

@@ -20,7 +20,7 @@ class ScenarioSelectRequest(BaseModel):
 
 
 class CsvUploadRequest(BaseModel):
-    entity: Literal["inventory", "destinations", "transport"]
+    entity: Literal["inventory", "destinations", "transport", "combined"]
     csv_content: str = Field(min_length=5)
 
 

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import csv
+import io
+import re
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -64,7 +67,37 @@ def data_status():
 @app.post("/api/data/upload")
 def upload_csv(request: CsvUploadRequest):
     try:
-        if request.entity == "inventory":
+        if request.entity == "combined":
+            reader = csv.DictReader(io.StringIO(request.csv_content.strip()))
+            required = {"batch_id", "commodity", "quantity_kg", "remaining_shelf_life_hours", "origin", "destination", "destination_demand_kg", "selling_price_per_kg_inr", "travel_time_hours", "transport_cost_per_kg_inr", "destination_capacity_kg", "handling_time_hours"}
+            headers = set(reader.fieldnames or [])
+            missing = sorted(required - headers)
+            if missing:
+                raise HTTPException(status_code=422, detail="Combined CSV is missing required columns: " + ", ".join(missing))
+            inventory, destination_map, route_map = [], {}, {}
+            for row in reader:
+                if not row or not any((v or "").strip() for v in row.values()):
+                    continue
+                origin = (row.get("origin") or "CENTRAL").strip()
+                destination_name = (row.get("destination") or "").strip()
+                destination_id = re.sub(r"[^a-z0-9]+", "_", destination_name.lower()).strip("_")
+                commodity = (row.get("commodity") or "").strip()
+                if not destination_name or not commodity:
+                    raise HTTPException(status_code=422, detail="Each row must include a commodity and destination.")
+                inventory.append({"batch_id": row["batch_id"].strip(), "commodity": commodity, "quantity_kg": float(row["quantity_kg"]), "remaining_shelf_life_hours": float(row["remaining_shelf_life_hours"]), "selling_price_per_kg": float(row["selling_price_per_kg_inr"]), "origin_id": origin, "handling_cost_per_kg": 1.0, "handling_time_hours": float(row["handling_time_hours"])})
+                dest = destination_map.setdefault(destination_id, {"destination_id": destination_id, "name": destination_name, "delivery_window_hours": 24.0, "demand_by_commodity": {}, "price_by_commodity": {}})
+                dest["demand_by_commodity"][commodity] = max(dest["demand_by_commodity"].get(commodity, 0), float(row["destination_demand_kg"]))
+                dest["price_by_commodity"][commodity] = float(row["selling_price_per_kg_inr"])
+                route_key = (origin, destination_id)
+                route = route_map.setdefault(route_key, {"origin_id": origin, "destination_id": destination_id, "travel_time_hours": float(row["travel_time_hours"]), "transport_cost": float(row["transport_cost_per_kg_inr"]), "capacity_kg": float(row["destination_capacity_kg"])})
+                route["travel_time_hours"] = min(route["travel_time_hours"], float(row["travel_time_hours"]))
+                route["capacity_kg"] = max(route["capacity_kg"], float(row["destination_capacity_kg"]))
+            if not inventory:
+                raise HTTPException(status_code=422, detail="The CSV contains no data rows.")
+            data_manager.inventory_provider.set_data(inventory, source="uploaded_csv")
+            data_manager.price_provider.set_destinations(list(destination_map.values()), source="uploaded_csv")
+            data_manager.route_provider.set_routes(list(route_map.values()), source="uploaded_csv")
+        elif request.entity == "inventory":
             data_manager.inventory_provider.upload_csv(request.csv_content)
         elif request.entity == "destinations":
             data_manager.price_provider.upload_csv(request.csv_content)
