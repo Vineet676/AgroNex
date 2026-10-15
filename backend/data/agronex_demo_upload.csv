@@ -1,0 +1,9 @@
+batch_id,commodity,quantity_kg,remaining_shelf_life_hours,origin,destination,destination_demand_kg,selling_price_per_kg_inr,travel_time_hours,transport_cost_per_kg_inr,destination_capacity_kg,handling_time_hours
+B101,Spinach,70,5,CENTRAL,Chennai Quick Market,55,38,1.5,2,60,0.5
+B102,Tomatoes,140,14,CENTRAL,Chennai Quick Market,110,34,2,2.5,60,1
+B103,Tomatoes,90,28,CENTRAL,Tambaram Fresh Hub,100,37,3.5,2.5,100,1
+B104,Bananas,120,20,CENTRAL,OMR Retail Cluster,90,48,2.5,2,110,1
+B105,Mangoes,75,36,CENTRAL,OMR Retail Cluster,65,70,2.5,3,110,1.5
+B106,Spinach,60,9,CENTRAL,Tambaram Fresh Hub,45,32,3.5,2.5,100,0.5
+B107,Cauliflower,100,18,CENTRAL,Koyambedu Wholesale,140,35,1.5,1.5,150,1
+B108,Tomatoes,85,8,CENTRAL,Koyambedu Wholesale,70,31,1.5,1.5,150,1

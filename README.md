@@ -68,6 +68,21 @@ From the project root after installing backend requirements:
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
+## PostgreSQL setup
+
+PostgreSQL is the production data store for inventory, demand, prices, routes,
+and saved distribution plans. JSON data remains a validated local fallback until
+the database is configured and seeded.
+
+1. Create a database named `agronex` in PostgreSQL.
+2. Copy `.env.example` to `.env` and set `DATABASE_URL` with your own credentials.
+3. Restart the FastAPI server, then call `POST /api/database/initialize` once.
+
+Initialization creates the operational tables and imports the current validated
+dataset. After that, `/api/optimize`, scenarios, and saved plans use PostgreSQL.
+If PostgreSQL is unavailable, the API safely falls back to the local validated
+snapshot rather than creating an incomplete plan.
+
 ## API
 
 - `GET /api/health` — health/version
@@ -75,6 +90,9 @@ From the project root after installing backend requirements:
 - `POST /api/optimize` — baseline and optimized plans; optional payload can supply `inventory`, `destinations`, and `transport` arrays
 - `POST /api/simulate` — scenario replan with `demand_change_percent`, `travel_delay_hours`, `capacity_change_percent`
 - `POST /api/explain` — explanation grounded in a calculated plan
+- `GET /api/database/status` — PostgreSQL connection status
+- `POST /api/database/initialize` — create tables and seed the current dataset
+- `GET /api/plans` — recent saved baseline and optimized plans
 - `GET /docs` — interactive Swagger docs
 
 ## Model and evaluation notes

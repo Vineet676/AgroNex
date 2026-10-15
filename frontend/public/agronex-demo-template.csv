@@ -1,0 +1,4 @@
+batch_id,commodity,quantity_kg,remaining_shelf_life_hours,origin,destination,destination_demand_kg,selling_price_per_kg_inr,travel_time_hours,transport_cost_per_kg_inr,destination_capacity_kg,handling_time_hours
+B001,Tomatoes,100,12,CENTRAL,Chennai Retail Hub,80,30,2,2.5,100,1
+B002,Bananas,80,24,CENTRAL,Chennai Retail Hub,60,40,3,2,100,1
+B003,Spinach,80,6,CENTRAL,Tambaram Fresh Store,50,25,1,1.5,80,0.5
