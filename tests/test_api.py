@@ -39,3 +39,35 @@ def test_react_build_is_served_when_present():
     if FRONTEND_DIST.exists():
         r = client.get('/')
         assert r.status_code == 200 and 'AgroNex' in r.text
+
+
+def test_ai_status_endpoint():
+    r = client.get('/api/ai/status')
+    assert r.status_code == 200
+    data = r.json()
+    assert 'status' in data and 'provider' in data and 'active_model' in data
+
+
+def test_quick_add_and_delete_batch():
+    test_batch = {
+        'batch_id': 'TEST-BATCH-999',
+        'commodity': 'Dragonfruit',
+        'quantity_kg': 350.0,
+        'remaining_shelf_life_hours': 28.0,
+        'selling_price_per_kg': 120.0,
+        'unit_cost_per_kg': 70.0,
+        'handling_time_hours': 1.0,
+        'origin_id': 'CENTRAL',
+    }
+    # Quick add
+    r_add = client.post('/api/inventory/quick-add', json=test_batch)
+    assert r_add.status_code == 200
+    added_inv = r_add.json()['inventory']
+    assert any(b['batch_id'] == 'TEST-BATCH-999' for b in added_inv)
+
+    # Delete
+    r_del = client.delete('/api/inventory/TEST-BATCH-999')
+    assert r_del.status_code == 200
+    rem_inv = r_del.json()['inventory']
+    assert not any(b['batch_id'] == 'TEST-BATCH-999' for b in rem_inv)
+

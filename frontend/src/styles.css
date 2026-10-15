@@ -77,3 +77,80 @@
 .quarantine-panel{border:1px solid #fecaca;background:#fffafa;border-radius:13px;margin-top:18px;overflow:hidden}
 .quarantine-header{padding:13px 18px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;background:#fef2f2;border-bottom:1px solid #fee2e2}
 .quarantine-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:6px;font-size:9px;font-weight:800;background:#fee2e2;color:#991b1b;border:1px solid #fecaca}
+
+/* Interactive Popovers & Dropdowns */
+.workspace-wrapper{position:relative}
+.workspace{cursor:pointer;user-select:none;transition:all .15s ease}
+.workspace:hover{background:#234c38;border-color:#386148}
+.workspace-dropdown{position:absolute;top:calc(100% + 6px);left:0;right:0;background:#143527;border:1px solid #2b543d;border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.35);z-index:50;overflow:hidden;padding:6px;animation:dropdownIn .18s cubic-bezier(.16,1,.3,1)}
+@keyframes dropdownIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+.workspace-item{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border:0;background:transparent;color:#c2d6c9;border-radius:8px;font-size:11px;font-weight:600;text-align:left;transition:all .12s ease}
+.workspace-item:hover{background:#1e4a36;color:#fff}
+.workspace-item.active{background:#255c42;color:#a7f3d0}
+
+/* User Profile Trigger */
+.user-mini,.profile{cursor:pointer;user-select:none;transition:all .15s ease}
+.user-mini:hover{transform:scale(1.05);box-shadow:0 0 0 3px #1e644033}
+.profile:hover{background:rgba(255,255,255,.05);border-radius:10px}
+
+/* Notifications Drawer */
+.notifications-wrapper{position:relative}
+.notifications-dropdown{position:absolute;top:calc(100% + 10px);right:0;width:380px;max-width:calc(100vw - 32px);background:#ffffff;border:1px solid #e1e7de;border-radius:16px;box-shadow:0 16px 40px rgba(16,43,32,.18);z-index:60;overflow:hidden;animation:modalIn .2s cubic-bezier(.16,1,.3,1)}
+.notifications-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#f9fbf8;border-bottom:1px solid #edf2ea}
+.notifications-head h4{margin:0;font:800 13px Manrope,sans-serif;color:#1a3325;display:flex;align-items:center;gap:7px}
+.notifications-head button{background:transparent;border:0;color:#1e6440;font-size:10px;font-weight:700;padding:0}
+.notifications-list{max-height:380px;overflow-y:auto;padding:8px 12px}
+.notification-item{display:flex;align-items:flex-start;gap:12px;padding:11px 10px;border-radius:10px;margin-bottom:6px;transition:background .15s ease}
+.notification-item:hover{background:#f6faf4}
+.notification-item.critical{background:#fef2f2}
+.notification-item.warning{background:#fffbeb}
+.notification-item.info{background:#f0fdf4}
+.notification-icon{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;flex-shrink:0}
+.notification-icon.critical{background:#fee2e2;color:#dc2626}
+.notification-icon.warning{background:#fef3c7;color:#d97706}
+.notification-icon.info{background:#dcfce7;color:#16a34a}
+.notification-content{flex:1;min-width:0}
+.notification-content b{font-size:11px;color:#1c3427;display:block}
+.notification-content p{font-size:10px;color:#556c5c;margin:3px 0 0;line-height:1.45}
+.notification-content small{font-size:8.5px;color:#8c9e92;margin-top:4px;display:block}
+
+/* Beginner-Friendly Guide Banner */
+.beginner-guide{background:linear-gradient(135deg,#123323 0%,#19432f 100%);border:1px solid #28543d;border-radius:16px;padding:22px 24px;margin-bottom:24px;color:#ffffff;position:relative;overflow:hidden;box-shadow:0 8px 24px rgba(18,51,35,.12)}
+.beginner-guide-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.beginner-guide-head h3{font:800 15px Manrope,sans-serif;letter-spacing:-.3px;margin:0;color:#ffffff;display:flex;align-items:center;gap:8px}
+.beginner-guide-head p{font-size:11px;color:#b3cebd;margin:4px 0 0}
+.beginner-guide-head button{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:#ffffff;border-radius:8px;padding:4px 10px;font-size:10px;font-weight:700;transition:all .15s}
+.beginner-guide-head button:hover{background:rgba(255,255,255,.2)}
+.guide-steps-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.guide-step-card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:14px;backdrop-filter:blur(8px);transition:transform .15s ease,background .15s ease}
+.guide-step-card:hover{background:rgba(255,255,255,.1);transform:translateY(-2px)}
+.guide-step-num{width:22px;height:22px;border-radius:6px;background:#a7f3d0;color:#064e3b;font-size:10px;font-weight:800;display:grid;place-items:center;margin-bottom:10px}
+.guide-step-card b{font-size:11px;color:#ffffff;display:block}
+.guide-step-card p{font-size:9.5px;color:#c2d8cb;line-height:1.5;margin:5px 0 0}
+
+/* Quick Add Batch Form Styles */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.form-group{display:flex;flex-direction:column;gap:5px}
+.form-label{font-size:10px;font-weight:700;color:#3b5243;text-transform:uppercase;letter-spacing:.4px}
+.form-input,.form-select{height:38px;border:1px solid #d8e2d6;border-radius:9px;padding:0 12px;font-size:11px;color:#1d3326;background:#fff;outline:0;transition:border-color .15s ease}
+.form-input:focus,.form-select:focus{border-color:#1e6440;box-shadow:0 0 0 3px rgba(30,100,64,.1)}
+.form-hint{font-size:9px;color:#7a8e80;line-height:1.35}
+.action-icon-danger{width:28px;height:28px;border-radius:7px;border:1px solid #fecaca;background:#fff;color:#dc2626;display:grid;place-items:center;transition:all .15s ease}
+.action-icon-danger:hover{background:#fee2e2}
+
+/* Chat Message Bubbles */
+.chat-messages-container{display:flex;flex-direction:column;gap:12px;margin-bottom:18px;max-height:440px;overflow-y:auto;padding-right:4px}
+.chat-bubble{max-width:85%;padding:14px 16px;border-radius:14px;font-size:11px;line-height:1.65;white-space:pre-wrap}
+.chat-bubble.user{align-self:flex-end;background:#1e6440;color:#ffffff;border-bottom-right-radius:4px}
+.chat-bubble.assistant{align-self:flex-start;background:#f3f7f2;border:1px solid #e1ebe0;color:#243b2d;border-bottom-left-radius:4px}
+.chat-bubble-source{display:inline-flex;align-items:center;gap:5px;font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#1e6440;margin-bottom:6px}
+.chat-bubble-time{display:block;font-size:8.5px;opacity:.7;margin-top:6px}
+
+/* Hardware / LLM Status Badge in Copilot */
+.copilot-model-card{display:flex;align-items:center;justify-content:space-between;background:#f7faf6;border:1px solid #e1ebe0;border-radius:12px;padding:12px 16px;margin-bottom:18px}
+.copilot-model-info{display:flex;align-items:center;gap:10px}
+.copilot-model-icon{width:32px;height:32px;border-radius:9px;background:#dcfce7;color:#15803d;display:grid;place-items:center}
+.copilot-model-info b{font-size:11px;color:#1a3426;display:block}
+.copilot-model-info small{font-size:9.5px;color:#617769}
+.copilot-gpu-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:6px;background:#e0f2fe;border:1px solid #bae6fd;color:#0369a1;font-size:9px;font-weight:700}
+

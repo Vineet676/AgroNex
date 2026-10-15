@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, BarChart3, Bell, Boxes,
-  Check, ChevronDown, ChevronUp, CircleHelp, Clock3, Download, FileUp, Info, Leaf, MapPin,
-  Menu, Package, Play, RefreshCw, Route, Search, Send, ShieldCheck, Sparkles,
-  Sprout, TrendingUp, Truck, Upload, Warehouse, X
+  Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, CircleHelp, Clock3, Cpu, Download, FileUp, Info, Leaf, MapPin,
+  Menu, Package, Play, Plus, RefreshCw, Route, Search, Send, Settings, ShieldCheck, Sliders, Sparkles,
+  Sprout, Trash2, TrendingUp, Truck, Upload, User, Warehouse, X
 } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
@@ -214,6 +214,37 @@ function App() {
   const [solverMode, setSolverMode] = useState<'heuristic' | 'milp'>('heuristic');
   const [quarantineExpanded, setQuarantineExpanded] = useState<boolean>(true);
 
+  // Profile, Notifications & Workspace state
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notificationsRead, setNotificationsRead] = useState(false);
+  const [showWorkspaceDropdown, setShowWorkspaceDropdown] = useState(false);
+  const [activeWorkspace, setActiveWorkspace] = useState('Central Distribution Center (CDC-North)');
+  const [showAddBatchModal, setShowAddBatchModal] = useState(false);
+  const [showGuideBanner, setShowGuideBanner] = useState(true);
+
+  // Local AI Qwen & Chat state
+  const [aiStatus, setAiStatus] = useState<any>(null);
+  const [chatHistory, setChatHistory] = useState<Array<{ sender: 'user' | 'assistant'; text: string; mode?: string }>>([
+    {
+      sender: 'assistant',
+      text: 'Hello! I am your AgroNex AI Logistics Copilot running locally via Qwen on your NVIDIA GPU. I analyze real-time inventory, shelf-life constraints, transport corridors, and P&L economics. How can I assist your dispatch decisions today?',
+      mode: 'Local Qwen LLM'
+    }
+  ]);
+
+  // Quick Add Batch Form State
+  const [newBatch, setNewBatch] = useState({
+    commodity: 'Tomatoes',
+    quantity_kg: 500,
+    remaining_shelf_life_hours: 24,
+    selling_price_per_kg: 45,
+    unit_cost_per_kg: 28,
+    handling_time_hours: 1.0,
+    origin_id: 'CENTRAL',
+  });
+  const [addingBatch, setAddingBatch] = useState(false);
+
   // Upload modal state
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadEntity, setUploadEntity] = useState<'inventory' | 'destinations' | 'transport'>('inventory');
@@ -242,15 +273,17 @@ function App() {
     setLoading(true);
     setError('');
     try {
-      const [d, p, scens] = await Promise.all([
+      const [d, p, scens, ai] = await Promise.all([
         request('/api/initial-data'),
         request('/api/optimize', { solver_mode: solverMode }),
         request('/api/scenarios').catch(() => ({ scenarios: [] })),
+        request('/api/ai/status').catch(() => null),
       ]);
       setData(d);
       setDataStatus(d.data_source_status || null);
       setPlan(p);
       setScenariosList(scens.scenarios || []);
+      setAiStatus(ai);
     } catch (e: any) {
       setError(`${e.message}. Ensure the FastAPI server is running.`);
     } finally {
@@ -397,18 +430,128 @@ function App() {
     }
   };
 
+  const handleQuickAddBatch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddingBatch(true);
+    try {
+      const payload = {
+        batch_id: `BATCH-${Date.now().toString().slice(-4)}`,
+        commodity: newBatch.commodity,
+        quantity_kg: Number(newBatch.quantity_kg),
+        remaining_shelf_life_hours: Number(newBatch.remaining_shelf_life_hours),
+        selling_price_per_kg: Number(newBatch.selling_price_per_kg),
+        unit_cost_per_kg: Number(newBatch.unit_cost_per_kg),
+        handling_time_hours: Number(newBatch.handling_time_hours),
+        origin_id: newBatch.origin_id || 'CENTRAL',
+      };
+      const res = await request('/api/inventory/quick-add', payload);
+      if (data) {
+        setData({ ...data, inventory: res.inventory });
+      }
+      setShowAddBatchModal(false);
+      notify(`Added batch ${payload.batch_id} (${payload.commodity})`);
+      runOptimize();
+    } catch (err: any) {
+      notify(`Failed to add batch: ${err.message}`);
+    } finally {
+      setAddingBatch(false);
+    }
+  };
+
+  const handleDeleteBatch = async (batchId: string) => {
+    if (!window.confirm(`Delete produce batch ${batchId}?`)) return;
+    try {
+      const res = await fetch(`${API}/api/inventory/${batchId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
+      const resData = await res.json();
+      if (data) {
+        setData({ ...data, inventory: resData.inventory });
+      }
+      notify(`Batch ${batchId} deleted`);
+      runOptimize();
+    } catch (err: any) {
+      notify(`Delete error: ${err.message}`);
+    }
+  };
+
+  const handleResetDatabase = async () => {
+    try {
+      await request('/api/data/reset');
+      notify('Database reset to validated demo snapshot');
+      refresh();
+      setShowProfileModal(false);
+    } catch (err: any) {
+      notify(`Reset error: ${err.message}`);
+    }
+  };
+
+  const notifications = useMemo(() => {
+    const list: Array<{ id: string; type: 'critical' | 'warning' | 'info'; title: string; desc: string; time: string }> = [];
+    const quarantined = plan?.quarantined_waste || plan?.optimized?.quarantined_waste || [];
+    const immediateKg = plan?.immediate_spoilage_kg || plan?.optimized?.immediate_spoilage_kg || 0;
+    if (quarantined.length > 0) {
+      list.push({
+        id: 'quarantine',
+        type: 'critical',
+        title: 'Immediate Waste Quarantine Active',
+        desc: `${quarantined.length} batches (${fmt(immediateKg)} kg) diverted to bio-waste/compost due to shelf life <= dock handling buffer.`,
+        time: 'Active'
+      });
+    }
+    const lowShelf = inventory.filter(b => b.remaining_shelf_life_hours <= 12 && b.remaining_shelf_life_hours > 1);
+    if (lowShelf.length > 0) {
+      list.push({
+        id: 'low-shelf',
+        type: 'warning',
+        title: 'High Spoilage Risk Batches',
+        desc: `${lowShelf.length} produce batches have ≤ 12h shelf life remaining and require prioritized corridor dispatch.`,
+        time: 'High priority'
+      });
+    }
+    list.push({
+      id: 'ai-status',
+      type: 'info',
+      title: aiStatus?.local_ollama ? `Local Qwen (${aiStatus.active_model}) Active` : 'AI Copilot Ready',
+      desc: aiStatus?.local_ollama
+        ? 'Accelerated on local NVIDIA RTX GPU for zero-latency operations assistance.'
+        : 'Rule-based explainability active.',
+      time: 'Live'
+    });
+    list.push({
+      id: 'solver-mode',
+      type: 'info',
+      title: solverMode === 'milp' ? 'Exact MILP Solver Active' : 'Heuristic Optimization Active',
+      desc: solverMode === 'milp'
+        ? 'PuLP / CBC branch-and-cut optimization active for mathematically provable maximum profit.'
+        : 'Fast greedy heuristic active for real-time sub-second dispatching.',
+      time: 'Engine'
+    });
+    return list;
+  }, [plan, inventory, aiStatus, solverMode]);
+
   const ask = async (q = question) => {
     if (!q.trim()) return;
+    const queryText = q.trim();
+    setChatHistory(prev => [...prev, { sender: 'user', text: queryText }]);
+    setQuestion('');
     setAsking(true);
     setAnswer('');
     try {
-      const r = await request('/api/explain', { question: q, plan: plan?.optimized });
-      setAnswer(`${r.answer}\n\nSource: ${r.mode}. Analysis derived from validated network constraints.`);
+      const r = await request('/api/explain', { question: queryText, plan: plan?.optimized });
+      const ansText = r.answer;
+      setAnswer(ansText);
+      setChatHistory(prev => [
+        ...prev,
+        { sender: 'assistant', text: ansText, mode: r.mode || 'Local Qwen LLM' }
+      ]);
     } catch (e: any) {
       setAnswer(e.message);
+      setChatHistory(prev => [
+        ...prev,
+        { sender: 'assistant', text: `Error: ${e.message}`, mode: 'Error' }
+      ]);
     } finally {
       setAsking(false);
-      setQuestion('');
     }
   };
 
@@ -450,15 +593,44 @@ function App() {
           </button>
         </div>
 
-        <div className="workspace">
-          <div className="workspace-icon">
-            <Sprout size={18} />
+        <div className="workspace-wrapper">
+          <div className="workspace" onClick={() => setShowWorkspaceDropdown(!showWorkspaceDropdown)}>
+            <div className="workspace-icon">
+              <Sprout size={18} />
+            </div>
+            <div>
+              <b>{activeWorkspace.split('(')[0].trim()}</b>
+              <small>{activeWorkspace.includes('(') ? activeWorkspace.split('(')[1].replace(')', '') : 'Active Operations Workspace'}</small>
+            </div>
+            <ChevronDown size={15} style={{ transform: showWorkspaceDropdown ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
           </div>
-          <div>
-            <b>AgroNex Regional Supply</b>
-            <small>Active Operations Workspace</small>
-          </div>
-          <ChevronDown size={15} />
+          {showWorkspaceDropdown && (
+            <div className="workspace-dropdown">
+              {[
+                { name: 'Central Distribution Center (CDC-North)', desc: 'Main Hub · 24h Cold Chain Network' },
+                { name: 'Western Agri-Logistics Hub (CDC-West)', desc: 'Nashik / Pune Perishable Terminal' },
+                { name: 'Southern Cold-Chain Terminal (CDC-South)', desc: 'Bengaluru Regional Fresh Hub' },
+              ].map(ws => (
+                <button
+                  key={ws.name}
+                  type="button"
+                  className={`workspace-item ${activeWorkspace === ws.name ? 'active' : ''}`}
+                  onClick={() => {
+                    setActiveWorkspace(ws.name);
+                    setShowWorkspaceDropdown(false);
+                    notify(`Switched workspace to ${ws.name}`);
+                    runOptimize();
+                  }}
+                >
+                  <div>
+                    <div>{ws.name.split('(')[0]}</div>
+                    <small style={{ fontSize: '9px', opacity: 0.75 }}>{ws.desc}</small>
+                  </div>
+                  {activeWorkspace === ws.name && <Check size={14} />}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="nav-label">WORKSPACE</div>
@@ -488,7 +660,7 @@ function App() {
             </button>
           </div>
 
-          <div className="profile">
+          <div className="profile" onClick={() => setShowProfileModal(true)} title="Click to view Operations & Node Settings">
             <div className="avatar">AN</div>
             <div>
               <b>AgroNex Operations</b>
@@ -576,11 +748,52 @@ function App() {
               <RefreshCw size={16} />
             </button>
 
-            <button className="icon-button notification" title="Notifications">
-              <Bell size={16} />
-              <i />
-            </button>
-            <div className="user-mini">AN</div>
+            {/* Operational Alerts & Notifications */}
+            <div className="notifications-wrapper">
+              <button
+                className="icon-button notification"
+                title="Operational Notifications"
+                onClick={() => {
+                  setShowNotifications(!showNotifications);
+                  setNotificationsRead(true);
+                }}
+              >
+                <Bell size={16} />
+                {!notificationsRead && notifications.some(n => n.type === 'critical') && <i />}
+              </button>
+
+              {showNotifications && (
+                <div className="notifications-dropdown">
+                  <div className="notifications-head">
+                    <h4><Bell size={14} color="#1e6440" /> Operational Alerts ({notifications.length})</h4>
+                    <button type="button" onClick={() => setNotificationsRead(true)}>Mark all read</button>
+                  </div>
+                  <div className="notifications-list">
+                    {notifications.map(n => (
+                      <div key={n.id} className={`notification-item ${n.type}`}>
+                        <div className={`notification-icon ${n.type}`}>
+                          {n.type === 'critical' ? <AlertTriangle size={14} /> : n.type === 'warning' ? <Clock3 size={14} /> : <CheckCircle2 size={14} />}
+                        </div>
+                        <div className="notification-content">
+                          <b>{n.title}</b>
+                          <p>{n.desc}</p>
+                          <small>{n.time}</small>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Operations Profile Trigger */}
+            <div
+              className="user-mini"
+              title="Click to view Operations & Node Settings"
+              onClick={() => setShowProfileModal(true)}
+            >
+              AN
+            </div>
           </div>
         </header>
 
@@ -644,6 +857,41 @@ function App() {
                       <ShieldCheck size={16} /> Constraint-first planning
                     </div>
                   </div>
+
+                  {/* Beginner-Friendly Guide Banner */}
+                  {showGuideBanner && (
+                    <div className="beginner-guide">
+                      <div className="beginner-guide-head">
+                        <div>
+                          <h3><Sparkles size={16} color="#a7f3d0" /> How AgroNex Optimizes Perishable Supply Chains</h3>
+                          <p>A quick 4-step walkthrough for dispatch operators and logistics planners.</p>
+                        </div>
+                        <button type="button" onClick={() => setShowGuideBanner(false)}>Dismiss Guide</button>
+                      </div>
+                      <div className="guide-steps-grid">
+                        <div className="guide-step-card">
+                          <div className="guide-step-num">1</div>
+                          <b>Input Fresh Inventory</b>
+                          <p>Track produce with weight, remaining shelf life, and farmer cost. Expired produce (&le;1h) is quarantined instantly.</p>
+                        </div>
+                        <div className="guide-step-card">
+                          <div className="guide-step-num">2</div>
+                          <b>Choose Optimization Solver</b>
+                          <p>Use the fast <strong>Heuristic</strong> engine for instant routing, or the <strong>Exact MILP</strong> solver for mathematical profit maximization.</p>
+                        </div>
+                        <div className="guide-step-card">
+                          <div className="guide-step-num">3</div>
+                          <b>Inspect MoFPI P&L Economics</b>
+                          <p>Review real Net Economic Profit after accounting for freight transport, dock handling, farmer COGS, and disposal penalties.</p>
+                        </div>
+                        <div className="guide-step-card">
+                          <div className="guide-step-num">4</div>
+                          <b>Consult Local Qwen Copilot</b>
+                          <p>Chat directly with your on-device Qwen model on RTX GPU to explain route trade-offs, discount clearances, and bottlenecks.</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="section-title">
                     <div>
@@ -844,6 +1092,9 @@ function App() {
                       <p>{inventory.length} tracked batches · verified shelf life & handling costs</p>
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-primary" onClick={() => setShowAddBatchModal(true)}>
+                        <Plus size={15} /> Add Produce Batch
+                      </button>
                       <button className="btn btn-light" onClick={() => setShowUploadModal(true)}>
                         <Upload size={15} /> Upload CSV
                       </button>
@@ -881,6 +1132,7 @@ function App() {
                           <th>Origin</th>
                           <th>Handling cost / time</th>
                           <th>Freshness status</th>
+                          <th style={{ width: 45, textAlign: 'center' }}>Action</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -918,6 +1170,16 @@ function App() {
                               <span className={`status-tag ${b.remaining_shelf_life_hours <= 6 ? 'status-risk' : b.remaining_shelf_life_hours <= 12 ? 'status-watch' : 'status-ok'}`}>
                                 {b.remaining_shelf_life_hours <= 6 ? 'Critical (<6h)' : b.remaining_shelf_life_hours <= 12 ? 'At Risk (<12h)' : 'Healthy'}
                               </span>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                className="action-icon-danger"
+                                title={`Delete ${b.batch_id}`}
+                                onClick={() => handleDeleteBatch(b.batch_id)}
+                              >
+                                <Trash2 size={13} />
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -1300,46 +1562,67 @@ function App() {
                         <img src="/agronex-mark.png" alt="AgroNex Logo" />
                       </div>
                       <div>
-                        <h3>Ask AgroNex Copilot</h3>
-                        <p>Deterministic, constraint-grounded explanations · zero hallucinations</p>
+                        <h3>AgroNex AI Logistics Copilot</h3>
+                        <p>Powered by Local Qwen LLM on NVIDIA GPU · Grounded in live mathematical plan</p>
                       </div>
-                      <span className="status-tag status-ok">OPERATIONAL</span>
+                      <span className="status-tag status-ok">
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a', display: 'inline-block', marginRight: 4 }} />
+                        {aiStatus?.local_ollama ? 'LOCAL QWEN ACTIVE' : 'ONLINE'}
+                      </span>
                     </div>
 
-                    <div className="chat-welcome">
-                      <div className="chat-spark">
-                        <Sparkles size={20} />
+                    {/* Model & Hardware Status Card */}
+                    <div className="copilot-model-card" style={{ marginTop: 16 }}>
+                      <div className="copilot-model-info">
+                        <div className="copilot-model-icon">
+                          <Cpu size={17} />
+                        </div>
+                        <div>
+                          <b>Model: {aiStatus?.active_model || 'qwen3:8b'} ({aiStatus?.provider || 'Local Ollama'})</b>
+                          <small>Context: Grounded with real-time P&L, {inventory.length} produce batches, and route dispatches</small>
+                        </div>
                       </div>
-                      <h2>Make every number transparent.</h2>
-                      <p>
-                        Ask about batch allocations, route scarcity reservation, spoilage drivers, or urgency-based discount tiers.
-                        All answers are grounded in calculated mathematical plan results.
-                      </p>
+                      <span className="copilot-gpu-pill">
+                        <Sparkles size={11} /> {aiStatus?.acceleration || 'Local NVIDIA RTX GPU'}
+                      </span>
                     </div>
 
+                    {/* Suggested Question Pills */}
                     <div className="suggested-questions">
                       {[
-                        'Why was this fragile batch dispatched first?',
-                        'How does route scarcity reservation reduce modeled spoilage?',
-                        'Explain the baseline vs optimized plan comparison.',
-                        'Which batches require urgency-tiered discount clearance?',
+                        'Why is produce with 0h shelf life quarantined for compost?',
+                        'How does the Exact MILP solver compare to the heuristic engine?',
+                        'Explain the MoFPI Net Economic Profit calculation in detail.',
+                        'Which destinations have unmet demand and what are the corridor bottlenecks?',
                       ].map(q => (
-                        <button key={q} onClick={() => ask(q)}>
-                          {q}
+                        <button key={q} type="button" onClick={() => ask(q)} disabled={asking}>
+                          <span>{q}</span>
                           <ArrowUpRight size={14} />
                         </button>
                       ))}
                     </div>
 
-                    {answer && (
-                      <div className="answer-box">
-                        <div className="answer-heading">
-                          <Sparkles size={15} /> OPERATIONAL AUDIT & REASONING
+                    {/* Conversation History */}
+                    <div className="chat-messages-container">
+                      {chatHistory.map((msg, idx) => (
+                        <div key={idx} className={`chat-bubble ${msg.sender}`}>
+                          {msg.sender === 'assistant' && (
+                            <div className="chat-bubble-source">
+                              <Sparkles size={11} /> {msg.mode || 'AgroNex Copilot'}
+                            </div>
+                          )}
+                          <div>{msg.text}</div>
                         </div>
-                        <p>{answer}</p>
-                      </div>
-                    )}
+                      ))}
+                      {asking && (
+                        <div className="chat-bubble assistant" style={{ fontStyle: 'italic', color: '#68826f' }}>
+                          <span className="spinner" style={{ width: 14, height: 14, display: 'inline-block', marginRight: 8, verticalAlign: 'middle' }} />
+                          Local Qwen model is analyzing operational constraints on GPU…
+                        </div>
+                      )}
+                    </div>
 
+                    {/* Chat Input */}
                     <form
                       className="chat-input"
                       onSubmit={e => {
@@ -1350,7 +1633,8 @@ function App() {
                       <input
                         value={question}
                         onChange={e => setQuestion(e.target.value)}
-                        placeholder="Ask about allocations, bottlenecks, or constraints…"
+                        placeholder="Ask local Qwen about batch allocations, spoilage penalties, or route feasibility…"
+                        disabled={asking}
                       />
                       <button className="send-button" disabled={asking || !question.trim()}>
                         <Send size={16} />
@@ -1358,7 +1642,7 @@ function App() {
                     </form>
 
                     <div className="copilot-disclaimer">
-                      {asking ? 'Analyzing verified plan outputs…' : 'Deterministic explanation grounded in real operational constraints.'}
+                      {asking ? 'Inference running locally on RTX GPU…' : 'Deterministic explanation grounded in real operational constraints.'}
                     </div>
                   </section>
 
@@ -1482,6 +1766,214 @@ function App() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Operations Controller Profile & Settings Modal */}
+      {showProfileModal && (
+        <div className="modal-backdrop" onClick={() => setShowProfileModal(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3><User size={18} style={{ verticalAlign: 'middle', marginRight: 8, color: '#1e6440' }} /> Operations Controller Profile</h3>
+              <button type="button" onClick={() => setShowProfileModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 14px', background: '#f5f9f3', borderRadius: 12, marginBottom: 16 }}>
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: '#1e6440', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 16, fontWeight: 800 }}>
+                  AN
+                </div>
+                <div>
+                  <b style={{ fontSize: 13, color: '#1a3325' }}>Lead Dispatch Operations Controller</b>
+                  <small style={{ display: 'block', color: '#68826f', marginTop: 2 }}>{activeWorkspace}</small>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, color: '#15803d', fontWeight: 700, marginTop: 4 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} /> Active Session (Production Node)
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gap: 12, marginBottom: 18 }}>
+                <div style={{ padding: '12px 14px', border: '1px solid #e2ebd8', borderRadius: 10, background: '#fff' }}>
+                  <span style={{ fontSize: 10, color: '#778a7b', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>
+                    Hardware & AI Acceleration
+                  </span>
+                  <b style={{ fontSize: 12, color: '#1f3829', display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <Cpu size={16} color="#16a34a" /> {aiStatus?.acceleration || 'NVIDIA GeForce RTX Local GPU'}
+                  </b>
+                  <small style={{ color: '#62796a', display: 'block', marginTop: 4 }}>
+                    Model: <strong>{aiStatus?.active_model || 'qwen3:8b'}</strong> ({aiStatus?.provider || 'Local Ollama'}) · Zero-latency private inference
+                  </small>
+                </div>
+
+                <div style={{ padding: '12px 14px', border: '1px solid #e2ebd8', borderRadius: 10, background: '#fff' }}>
+                  <span style={{ fontSize: 10, color: '#778a7b', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 0.5, display: 'block', marginBottom: 4 }}>
+                    Active Optimization Engine
+                  </span>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <button
+                      type="button"
+                      className={`btn ${solverMode === 'heuristic' ? 'btn-primary' : 'btn-light'}`}
+                      style={{ flex: 1, fontSize: 11, height: 34 }}
+                      onClick={() => handleSolverModeChange('heuristic')}
+                    >
+                      Heuristic (Fast)
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn ${solverMode === 'milp' ? 'btn-primary' : 'btn-light'}`}
+                      style={{ flex: 1, fontSize: 11, height: 34 }}
+                      onClick={() => handleSolverModeChange('milp')}
+                    >
+                      <Sparkles size={13} /> Exact MILP (Optimal)
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px solid #edf2ea', paddingTop: 14 }}>
+                <span style={{ fontSize: 10, color: '#778a7b', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 0.5, display: 'block', marginBottom: 8 }}>
+                  Database Maintenance & Reset
+                </span>
+                <p style={{ fontSize: 10, color: '#6b7d70', lineHeight: 1.5, margin: '0 0 10px' }}>
+                  Restore all produce batches, demand nodes, and transport corridors to the verified initial benchmark snapshot.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-light"
+                  style={{ width: '100%', borderColor: '#fca5a5', color: '#b91c1c' }}
+                  onClick={handleResetDatabase}
+                >
+                  <RefreshCw size={14} /> Reset Network to Default Snapshot
+                </button>
+              </div>
+            </div>
+
+            <div className="modal-foot">
+              <span style={{ fontSize: 10, color: '#7a8e80' }}>AgroNex v1.2.0 Production Build</span>
+              <button type="button" className="btn btn-primary" onClick={() => setShowProfileModal(false)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Add Produce Batch Modal */}
+      {showAddBatchModal && (
+        <div className="modal-backdrop" onClick={() => setShowAddBatchModal(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3><Plus size={18} style={{ verticalAlign: 'middle', marginRight: 6, color: '#1e6440' }} /> Add Produce Inventory Batch</h3>
+              <button type="button" onClick={() => setShowAddBatchModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickAddBatch}>
+              <div className="modal-body">
+                <p style={{ fontSize: 11, color: '#667c6d', margin: '0 0 16px', lineHeight: 1.5 }}>
+                  Enter fresh produce lot details. Batches with remaining shelf life &le; handling buffer (1h) will be automatically quarantined for composting.
+                </p>
+
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label className="form-label">Commodity</label>
+                    <select
+                      className="form-select"
+                      value={newBatch.commodity}
+                      onChange={e => setNewBatch({ ...newBatch, commodity: e.target.value })}
+                    >
+                      <option value="Tomatoes">Tomatoes (Solanum lycopersicum)</option>
+                      <option value="Mangoes">Mangoes (Alphonso / Kesar)</option>
+                      <option value="Apples">Apples (Shimla / Kinnaur)</option>
+                      <option value="Onions">Onions (Nashik Red)</option>
+                      <option value="Spinach">Spinach (Fresh Leafy Green)</option>
+                      <option value="Strawberries">Strawberries (Mahabaleshwar)</option>
+                      <option value="Grapes">Grapes (Thomson Seedless)</option>
+                      <option value="Bell Peppers">Bell Peppers (Capsicum)</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Quantity (kg)</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      required
+                      min="10"
+                      step="10"
+                      value={newBatch.quantity_kg}
+                      onChange={e => setNewBatch({ ...newBatch, quantity_kg: Number(e.target.value) })}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Remaining Shelf Life (Hours)</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      required
+                      min="0"
+                      step="0.5"
+                      value={newBatch.remaining_shelf_life_hours}
+                      onChange={e => setNewBatch({ ...newBatch, remaining_shelf_life_hours: Number(e.target.value) })}
+                    />
+                    <span className="form-hint">0h = Expired (Immediate Compost Quarantine)</span>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Target Selling Price (₹/kg)</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      required
+                      min="1"
+                      step="1"
+                      value={newBatch.selling_price_per_kg}
+                      onChange={e => setNewBatch({ ...newBatch, selling_price_per_kg: Number(e.target.value) })}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Farmer Procurement COGS (₹/kg)</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      required
+                      min="0"
+                      step="1"
+                      value={newBatch.unit_cost_per_kg}
+                      onChange={e => setNewBatch({ ...newBatch, unit_cost_per_kg: Number(e.target.value) })}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Dock Handling Time (Hours)</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      required
+                      min="0.5"
+                      step="0.5"
+                      value={newBatch.handling_time_hours}
+                      onChange={e => setNewBatch({ ...newBatch, handling_time_hours: Number(e.target.value) })}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="modal-foot">
+                <button type="button" className="btn btn-light" onClick={() => setShowAddBatchModal(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={addingBatch}>
+                  <Plus size={15} /> {addingBatch ? 'Saving & Optimizing…' : 'Add to Inventory & Optimize'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -12,13 +13,27 @@ from fastapi.staticfiles import StaticFiles
 
 try:
     from .engine import build_plan, apply_disruption, explain_plan, plan_distribution
-    from .models import DisruptionRequest, ExplainRequest, CsvUploadRequest, DataRefreshRequest, ScenarioSelectRequest
+    from .models import (
+        DisruptionRequest,
+        ExplainRequest,
+        CsvUploadRequest,
+        DataRefreshRequest,
+        ScenarioSelectRequest,
+        BatchInput,
+    )
     from .validation import ValidationError
     from .data_layer import data_manager
     from .scenarios import list_scenarios, get_scenario
 except ImportError:  # supports direct uvicorn execution
     from engine import build_plan, apply_disruption, explain_plan, plan_distribution
-    from models import DisruptionRequest, ExplainRequest, CsvUploadRequest, DataRefreshRequest, ScenarioSelectRequest
+    from models import (
+        DisruptionRequest,
+        ExplainRequest,
+        CsvUploadRequest,
+        DataRefreshRequest,
+        ScenarioSelectRequest,
+        BatchInput,
+    )
     from validation import ValidationError
     from data_layer import data_manager
     from scenarios import list_scenarios, get_scenario
@@ -202,6 +217,86 @@ def simulate(request: DisruptionRequest):
         raise HTTPException(status_code=422, detail=f"Simulation data validation error: {exc.message}") from exc
 
 
+def _call_local_qwen(question: str, plan: dict) -> str | None:
+    """Invokes local Ollama instance running Qwen (e.g. qwen3:8b) on NVIDIA GPU."""
+    ollama_url = os.getenv("AGRONEX_OLLAMA_URL", "http://127.0.0.1:11434/api/chat")
+    ollama_model = os.getenv("AGRONEX_OLLAMA_MODEL", "qwen3:8b")
+
+    metrics = plan.get("metrics", {})
+    quarantined = plan.get("quarantined_waste", [])
+    allocations = plan.get("allocations", [])
+
+    summary_context = {
+        "strategy": plan.get("strategy"),
+        "solver_used": plan.get("solver_used", "HEURISTIC"),
+        "delivered_kg": metrics.get("delivered_kg", 0),
+        "spoiled_kg": metrics.get("spoiled_kg", 0),
+        "immediate_spoilage_kg": metrics.get("immediate_spoilage_kg", 0),
+        "net_revenue_inr": metrics.get("net_revenue", 0),
+        "net_profit_inr": metrics.get("net_profit", 0),
+        "procurement_cogs_inr": metrics.get("procurement_cost", 0),
+        "spoilage_penalties_inr": metrics.get("spoilage_penalties", 0),
+        "demand_fulfillment_percent": metrics.get("demand_fulfillment_percent", 0),
+        "quarantined_batches_count": len(quarantined),
+        "top_allocations": [
+            {"batch": a.get("batch_id"), "commodity": a.get("commodity"), "dest": a.get("destination_id"), "kg": a.get("allocated_kg")}
+            for a in allocations[:8]
+        ],
+        "quarantined_samples": [
+            {"batch": q.get("batch_id"), "commodity": q.get("commodity"), "kg": q.get("quantity_kg"), "reason": q.get("reason")}
+            for q in quarantined[:5]
+        ],
+    }
+
+    system_prompt = (
+        "You are the AgroNex AI Perishable Logistics Copilot, an elite operations expert in agricultural supply chains, "
+        "cold-chain logistics, and post-harvest loss minimization. "
+        "You have direct access to the live distribution plan computed by the AgroNex engine. "
+        "Explain decisions concisely, professionally, and with grounded operational precision. "
+        "Key concepts: "
+        "- Produce with shelf life <= handling buffer (e.g. 0h) is immediately quarantined to compost/bio-gas (not delivered) to prevent food safety risks and transit rot. "
+        "- Net Economic Profit = Delivered Revenue - Transport Costs - Handling Costs - Procurement COGS - Spoilage Penalties. "
+        "- When relevant, cite the provided metrics numbers and batches. "
+        "Keep your answer under 3-4 paragraphs, clear, structured, and direct without meta-commentary."
+    )
+
+    payload = {
+        "model": ollama_model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    f"User Question: {question}\n\n"
+                    f"Verified Plan Summary Context:\n{json.dumps(summary_context, indent=2)}\n\n"
+                    f"Full Plan Data Snippet:\n{json.dumps(plan, ensure_ascii=False)[:12000]}"
+                ),
+            },
+        ],
+        "stream": False,
+        "options": {
+            "temperature": 0.3,
+            "num_predict": 700,
+        },
+    }
+
+    req = Request(
+        ollama_url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=35) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        raw_text = result.get("message", {}).get("content", "")
+        # Strip thinking tags from Qwen
+        cleaned = re.sub(r"<think>[\s\S]*?</think>", "", raw_text).strip()
+        return cleaned or None
+    except Exception:
+        return None
+
+
 def _call_optional_ai(question: str, plan: dict) -> str | None:
     """Optional OpenAI Responses API call. Falls back cleanly when no key/network."""
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
@@ -235,6 +330,66 @@ def _call_optional_ai(question: str, plan: dict) -> str | None:
         return None
 
 
+@app.get("/api/ai/status")
+def ai_status():
+    ollama_url = os.getenv("AGRONEX_OLLAMA_TAGS_URL", "http://127.0.0.1:11434/api/tags")
+    ollama_model = os.getenv("AGRONEX_OLLAMA_MODEL", "qwen3:8b")
+    ollama_online = False
+    available_models = []
+
+    try:
+        req = Request(ollama_url, headers={"Content-Type": "application/json"})
+        with urlopen(req, timeout=2) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            for m in data.get("models", []):
+                available_models.append(m.get("name", ""))
+            ollama_online = True
+    except Exception:
+        ollama_online = False
+
+    has_openai = bool(os.getenv("OPENAI_API_KEY", "").strip())
+    provider = "Local Qwen LLM (Ollama)" if ollama_online else ("OpenAI API" if has_openai else "Deterministic Engine")
+
+    return {
+        "status": "online" if (ollama_online or has_openai) else "offline",
+        "provider": provider,
+        "local_ollama": ollama_online,
+        "active_model": ollama_model if ollama_online else (os.getenv("AGRONEX_AI_MODEL", "gpt-4o-mini") if has_openai else "Rule-based"),
+        "available_models": available_models,
+        "acceleration": "Local NVIDIA RTX GPU (Zero-latency)" if ollama_online else "Cloud API / CPU",
+    }
+
+
+@app.post("/api/inventory/quick-add")
+def quick_add_batch(batch: BatchInput):
+    try:
+        updated = data_manager.add_batch(batch.model_dump())
+        return {
+            "status": "success",
+            "message": f"Successfully added batch {batch.batch_id} ({batch.commodity}).",
+            "inventory": updated,
+            "data_source_status": data_manager.get_status(),
+        }
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=f"Validation failed: {exc.message}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Could not add batch: {exc}") from exc
+
+
+@app.delete("/api/inventory/{batch_id}")
+def delete_batch(batch_id: str):
+    try:
+        updated = data_manager.delete_batch(batch_id)
+        return {
+            "status": "success",
+            "message": f"Successfully removed batch {batch_id}.",
+            "inventory": updated,
+            "data_source_status": data_manager.get_status(),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Could not delete batch: {exc}") from exc
+
+
 @app.post("/api/explain")
 def explain(request: ExplainRequest):
     data = request.plan
@@ -242,15 +397,30 @@ def explain(request: ExplainRequest):
         data_set = data_manager.get_dataset()
         result = build_plan(data_set["inventory"], data_set["destinations"], data_set["transport"])
         data = result["optimized"]
+
+    # 1. Try Local Qwen LLM on GPU first
+    local_answer = _call_local_qwen(request.question, data)
+    if local_answer:
+        return {
+            "answer": local_answer,
+            "question": request.question,
+            "source": "verified plan data",
+            "mode": f"Local Qwen LLM ({os.getenv('AGRONEX_OLLAMA_MODEL', 'qwen3:8b')})",
+            "disclaimer": "Grounded locally on NVIDIA GPU against operational and shelf-life constraints.",
+        }
+
+    # 2. Try Optional OpenAI API
     ai_answer = _call_optional_ai(request.question, data)
     if ai_answer:
         return {
             "answer": ai_answer,
             "question": request.question,
             "source": "verified plan data",
-            "mode": "AI-assisted",
+            "mode": "AI-assisted (Cloud)",
             "disclaimer": "Grounding verified against operational constraints.",
         }
+
+    # 3. Fallback to deterministic rule-based explain engine
     fallback = explain_plan(data, request.question)
     fallback["mode"] = "built-in explanation (AI API not configured or unavailable)"
     return fallback

@@ -109,6 +109,35 @@ class InventoryProvider(BaseProvider):
         self.fallback_active = False
         return deepcopy(self._current_data)
 
+    def add_batch(self, batch_data: dict[str, Any]) -> list[dict[str, Any]]:
+        new_list = deepcopy(self._current_data)
+        batch_id = str(batch_data.get("batch_id", "")).strip()
+        if not batch_id:
+            batch_id = f"BATCH-{len(new_list)+1:03d}"
+            batch_data["batch_id"] = batch_id
+        # Remove any existing batch with duplicate ID
+        new_list = [b for b in new_list if b.get("batch_id") != batch_id]
+        new_list.append(batch_data)
+        validated = validate_inventory(new_list)
+        self._current_data = validated
+        self.source = "manual_entry"
+        self.status = "live"
+        self.last_updated = _now_iso()
+        self.last_error = None
+        self.fallback_active = False
+        return deepcopy(self._current_data)
+
+    def delete_batch(self, batch_id: str) -> list[dict[str, Any]]:
+        new_list = [b for b in self._current_data if b.get("batch_id") != batch_id]
+        validated = validate_inventory(new_list)
+        self._current_data = validated
+        self.source = "manual_entry"
+        self.status = "live"
+        self.last_updated = _now_iso()
+        self.last_error = None
+        self.fallback_active = False
+        return deepcopy(self._current_data)
+
     def revert_to_fallback(self, reason: str = "Live data feed unavailable"):
         self._current_data = deepcopy(self._fallback_snapshot)
         self.source = "validated_snapshot"
@@ -347,6 +376,12 @@ class DataManager:
                 "routes": route_stat,
             },
         }
+
+    def add_batch(self, batch_data: dict[str, Any]) -> list[dict[str, Any]]:
+        return self.inventory_provider.add_batch(batch_data)
+
+    def delete_batch(self, batch_id: str) -> list[dict[str, Any]]:
+        return self.inventory_provider.delete_batch(batch_id)
 
     def reset_to_snapshot(self):
         self.inventory_provider.revert_to_fallback("Reset by user")
