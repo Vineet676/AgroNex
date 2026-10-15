@@ -252,12 +252,12 @@ def _call_local_qwen(question: str, plan: dict) -> str | None:
         "You are the AgroNex AI Perishable Logistics Copilot, an elite operations expert in agricultural supply chains, "
         "cold-chain logistics, and post-harvest loss minimization. "
         "You have direct access to the live distribution plan computed by the AgroNex engine. "
-        "Explain decisions concisely, professionally, and with grounded operational precision. "
+        "Answer immediately, directly, and concisely. Do NOT output internal thinking, reasoning tokens, or <think> tags. "
         "Key concepts: "
         "- Produce with shelf life <= handling buffer (e.g. 0h) is immediately quarantined to compost/bio-gas (not delivered) to prevent food safety risks and transit rot. "
         "- Net Economic Profit = Delivered Revenue - Transport Costs - Handling Costs - Procurement COGS - Spoilage Penalties. "
         "- When relevant, cite the provided metrics numbers and batches. "
-        "Keep your answer under 3-4 paragraphs, clear, structured, and direct without meta-commentary."
+        "Keep your answer crisp, structured, and under 3 paragraphs."
     )
 
     payload = {
@@ -267,16 +267,16 @@ def _call_local_qwen(question: str, plan: dict) -> str | None:
             {
                 "role": "user",
                 "content": (
-                    f"User Question: {question}\n\n"
-                    f"Verified Plan Summary Context:\n{json.dumps(summary_context, indent=2)}\n\n"
-                    f"Full Plan Data Snippet:\n{json.dumps(plan, ensure_ascii=False)[:12000]}"
+                    f"/no_think\nUser Question: {question}\n\n"
+                    f"Operational Plan Data:\n{json.dumps(summary_context, indent=2)}"
                 ),
             },
         ],
         "stream": False,
         "options": {
-            "temperature": 0.3,
-            "num_predict": 700,
+            "temperature": 0.2,
+            "top_p": 0.9,
+            "num_predict": 450,
         },
     }
 
