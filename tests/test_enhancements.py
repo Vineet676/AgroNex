@@ -184,6 +184,45 @@ def test_urgency_tiered_discount_rules():
     assert "B_FRESH" not in recs
 
 
+def test_handling_buffer_gating_in_discount_engine():
+    from backend.engine import calculate_discount_recommendation
+
+    # 1. Batch where shelf life <= handling buffer: unviable for secondary sale
+    unviable_batch = {
+        "batch_id": "B_UNVIABLE",
+        "commodity": "Berries",
+        "quantity_kg": 50,
+        "remaining_shelf_life_hours": 0.5,
+        "handling_time_hours": 1.0,
+        "selling_price_per_kg": 100,
+    }
+    rec = calculate_discount_recommendation(unviable_batch, 50.0, "Capacity exhausted")
+    assert rec is not None
+    assert rec["discount_percent"] == 0.0
+    assert rec["suggested_price_per_kg"] == 0.0
+    assert rec["potential_discounted_revenue"] == 0.0
+    assert rec["status"] == "UNVIABLE_FOR_DISCOUNT_COMPOST_ONLY"
+    assert rec["type"] == "compost_diversion"
+    assert "compost" in rec["action"].lower()
+
+    # 2. Batch where shelf life > handling buffer (e.g. 4.0h > 1.0h) -> valid 30% discount
+    viable_batch = {
+        "batch_id": "B_VIABLE",
+        "commodity": "Berries",
+        "quantity_kg": 50,
+        "remaining_shelf_life_hours": 4.0,
+        "handling_time_hours": 1.0,
+        "selling_price_per_kg": 100,
+    }
+    rec2 = calculate_discount_recommendation(viable_batch, 50.0, "Capacity exhausted")
+    assert rec2 is not None
+    assert rec2["discount_percent"] == 30.0
+    assert rec2["suggested_price_per_kg"] == 70.0
+    assert rec2["potential_discounted_revenue"] == 3500.0
+    assert rec2["status"] == "RECOMMENDED_NOT_REALIZED"
+
+
+
 # ---------------------------------------------------------------------------
 # Requirement 4: Realistic Scenarios & Multi-Metric Comparisons
 # ---------------------------------------------------------------------------

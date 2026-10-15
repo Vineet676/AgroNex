@@ -30,6 +30,7 @@ def calculate_discount_recommendation(
     """Calculates an urgency-tiered discount recommendation for unsold stock.
     
     Rules:
+    - Shelf life <= Handling buffer: Unviable for commercial discount; diverted to organic compost/biogas
     - Shelf life < 6h: 30% discount (Critical clearance)
     - 6h <= Shelf life <= 12h: 20% discount (High urgency)
     - 12h < Shelf life <= 24h: 10% discount (Moderate urgency)
@@ -40,9 +41,37 @@ def calculate_discount_recommendation(
     if unsold_kg <= 0.01:
         return None
 
-    shelf_life = float(batch["remaining_shelf_life_hours"])
+    shelf_life = float(batch.get("remaining_shelf_life_hours", 0.0))
     if shelf_life > HORIZON_HOURS:
         return None
+
+    handling_buffer = float(batch.get("handling_time_hours", 1.0))
+    base_price = float(batch.get("selling_price_per_kg", 0.0))
+
+    # Physical feasibility gate against warehouse handling buffer
+    if shelf_life <= handling_buffer:
+        reason = (
+            f"Normal allocation could not place {unsold_kg:g} kg: {unalloc_reason}. "
+            f"Remaining shelf life ({shelf_life:g}h) is less than or equal to handling buffer ({handling_buffer:g}h). "
+            f"Produce is unviable for commercial sale and cannot clear staging; diverted immediately to organic compost or biogas."
+        )
+        return {
+            "batch_id": batch["batch_id"],
+            "commodity": batch["commodity"],
+            "quantity_kg": _round(unsold_kg),
+            "remaining_shelf_life_hours": _round(shelf_life),
+            "handling_time_hours": _round(handling_buffer),
+            "original_price_per_kg": _round(base_price),
+            "suggested_price_per_kg": 0.0,
+            "discount_percent": 0.0,
+            "urgency_tier": "Unviable (Shelf life <= Handling Buffer)",
+            "potential_discounted_revenue": 0.0,
+            "type": "compost_diversion",
+            "is_confirmed_sale": False,
+            "status": "UNVIABLE_FOR_DISCOUNT_COMPOST_ONLY",
+            "action": "Immediate Organic Composting / Biogas Diversion",
+            "reason": reason,
+        }
 
     if shelf_life < 6.0:
         discount_percent = 30.0
@@ -57,7 +86,6 @@ def calculate_discount_recommendation(
         urgency_tier = "12-24h (Moderate Urgency)"
         action_note = "Early promotional markdown recommended to accelerate secondary channel sales."
 
-    base_price = float(batch["selling_price_per_kg"])
     suggested_price = _round(base_price * (1.0 - discount_percent / 100.0))
     potential_revenue = _round(suggested_price * unsold_kg)
 
