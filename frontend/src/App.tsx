@@ -226,6 +226,26 @@ function App() {
     notify(`Atmospheric FX: ${mode.toUpperCase()} environment active`);
   };
 
+  // Subtle interactive 3D perspective parallax for cinematic background
+  const [mouseParallax, setMouseParallax] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    let frameId: number;
+    const handleMove = (e: MouseEvent) => {
+      cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(() => {
+        const xOffset = ((e.clientX / window.innerWidth) - 0.5) * 14;
+        const yOffset = ((e.clientY / window.innerHeight) - 0.5) * 14;
+        setMouseParallax({ x: xOffset, y: yOffset });
+      });
+    };
+    window.addEventListener('mousemove', handleMove, { passive: true });
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      cancelAnimationFrame(frameId);
+    };
+  }, []);
+
   // Profile, Notifications & Workspace state
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -592,12 +612,19 @@ function App() {
 
   return (
     <div className="app-shell">
-      {/* Cinematic Background Scenery Crossfade Layers */}
-      <div className="cinematic-bg-container" aria-hidden="true">
+      {/* Cinematic Living Background Scenery Layers with 3D Mouse Parallax */}
+      <div
+        className="cinematic-bg-container"
+        aria-hidden="true"
+        style={{
+          transform: `translate3d(${-mouseParallax.x}px, ${-mouseParallax.y}px, 0)`,
+        }}
+      >
         <div className={`bg-layer bg-storm ${weatherMode === 'storm' ? 'active' : ''}`} />
         <div className={`bg-layer bg-mist ${weatherMode === 'mist' ? 'active' : ''}`} />
         <div className={`bg-layer bg-sun ${weatherMode === 'sun' ? 'active' : ''}`} />
         <div className={`bg-layer bg-cyber ${weatherMode === 'cyber' ? 'active' : ''}`} />
+        <div className="bg-aurora-sweep" />
         <div className="bg-overlay-tint" />
         <div className="cyber-grid-overlay" />
       </div>

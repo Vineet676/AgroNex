@@ -170,30 +170,48 @@ body {
   min-height: 100vh;
 }
 
-/* Cinematic Background Crossfade Container */
+/* Cinematic Background Crossfade Container with 3D Parallax Support */
 .cinematic-bg-container {
   position: fixed;
-  inset: 0;
+  inset: -25px;
   pointer-events: none;
   z-index: 0;
   overflow: hidden;
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
 }
 
 .bg-layer {
   position: absolute;
-  inset: 0;
+  inset: -20px;
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
   opacity: 0;
-  transform: scale(1.04);
-  transition: opacity 1.2s cubic-bezier(0.4, 0, 0.2, 1), transform 22s cubic-bezier(0.1, 0.9, 0.2, 1);
+  transform: scale(1.05);
+  transition: opacity 1.2s cubic-bezier(0.4, 0, 0.2, 1);
   will-change: opacity, transform;
 }
 
 .bg-layer.active {
   opacity: 1;
-  transform: scale(1.0);
+  animation: kenBurnsMotion 32s ease-in-out infinite alternate;
+}
+
+/* Infinite Cinematic Drifting Pan & Zoom Motion */
+@keyframes kenBurnsMotion {
+  0% {
+    transform: scale(1.04) translate(0%, 0%);
+  }
+  35% {
+    transform: scale(1.09) translate(-1.2%, -0.8%);
+  }
+  70% {
+    transform: scale(1.06) translate(1.4%, -1.1%);
+  }
+  100% {
+    transform: scale(1.11) translate(-0.8%, 1%);
+  }
 }
 
 .bg-storm {
@@ -210,6 +228,34 @@ body {
 
 .bg-cyber {
   background-image: url('https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=2070&auto=format&fit=crop');
+}
+
+/* Dynamic Living Sky Aurora & Atmospheric Light Sweep */
+.bg-aurora-sweep {
+  position: absolute;
+  inset: -30%;
+  background: radial-gradient(circle at 35% 25%, rgba(16, 185, 129, 0.18) 0%, transparent 45%),
+              radial-gradient(circle at 75% 60%, rgba(6, 182, 212, 0.15) 0%, transparent 42%),
+              radial-gradient(circle at 50% 80%, rgba(245, 158, 11, 0.12) 0%, transparent 40%);
+  filter: blur(50px);
+  pointer-events: none;
+  animation: auroraShift 22s ease-in-out infinite alternate;
+  mix-blend-mode: screen;
+}
+
+@keyframes auroraShift {
+  0% {
+    transform: rotate(0deg) scale(1);
+    opacity: 0.65;
+  }
+  50% {
+    transform: rotate(8deg) scale(1.15) translate(2.5%, -3%);
+    opacity: 0.95;
+  }
+  100% {
+    transform: rotate(-7deg) scale(1.07) translate(-2.5%, 2%);
+    opacity: 0.7;
+  }
 }
 
 /* Atmospheric Obsidian & Emerald Vignette */
