@@ -133,11 +133,38 @@ def plan_distribution(
     remaining_by_batch: dict[str, float] = {}
     discount_recommendations: list[dict[str, Any]] = []
 
-    # Pre-calculate feasible route options for each batch to measure Route Scarcity
+    # 1. Quarantine partitioning: batches unable to clear handling buffer are immediate compost waste
+    active_batches: list[dict[str, Any]] = []
+    quarantined_waste_records: list[dict[str, Any]] = []
+    immediate_spoilage_kg = 0.0
+
+    for b in batches:
+        shelf_life = float(b.get("remaining_shelf_life_hours", 0.0))
+        handling_time = float(b.get("handling_time_hours", 0.0))
+        if shelf_life <= handling_time:
+            qty = float(b.get("quantity_kg", 0.0))
+            immediate_spoilage_kg += qty
+            quarantined_waste_records.append({
+                "batch_id": b["batch_id"],
+                "commodity": b["commodity"],
+                "quantity_kg": qty,
+                "status": "IMMEDIATE_COMPOST_WASTE",
+                "remaining_shelf_life_hours": shelf_life,
+                "handling_time_hours": handling_time,
+                "action": "Divert immediately to organic compost or biogas digester",
+                "reason": (
+                    f"Remaining shelf life ({shelf_life:g}h) is less than or equal to mandatory "
+                    f"warehouse handling buffer ({handling_time:g}h). Produce cannot clear staging."
+                ),
+            })
+        else:
+            active_batches.append(b)
+
+    # Pre-calculate feasible route options for each active batch to measure Route Scarcity
     # A route is feasible if origin matches, arrival time <= batch shelf life and delivery window,
     # and initial destination demand for the commodity is > 0.
     batch_feasible_destinations: dict[str, list[dict]] = {}
-    for batch in batches:
+    for batch in active_batches:
         b_id = batch["batch_id"]
         origin = batch["origin_id"]
         comm = batch["commodity"]
@@ -162,7 +189,7 @@ def plan_distribution(
     # Count how many fragile/perishable batches depend on each destination corridor
     # to protect scarce corridors in the optimizer.
     corridor_scarcity: dict[str, float] = {d["destination_id"]: 0.0 for d in dests}
-    for batch in batches:
+    for batch in active_batches:
         b_id = batch["batch_id"]
         shelf = float(batch["remaining_shelf_life_hours"])
         opts = batch_feasible_destinations[b_id]
@@ -177,7 +204,7 @@ def plan_distribution(
     if strategy == "baseline":
         # Baseline order: Pure first-available order (as listed in inventory)
         # without sorting or optimization.
-        ordered_batches = batches
+        ordered_batches = active_batches
     else:
         # Optimized order: Reserves scarce feasible routes for the most perishable batches.
         # Priority combines perishability urgency with route scarcity (fewer feasible routes = higher priority).
@@ -190,7 +217,7 @@ def plan_distribution(
             priority_score = (1.0 / max(0.5, shelf)) * (1.0 + 2.0 * scarcity_factor)
             return (-priority_score, shelf, b["batch_id"])
 
-        ordered_batches = sorted(batches, key=optimized_priority)
+        ordered_batches = sorted(active_batches, key=optimized_priority)
 
     # Process each batch
     for batch in ordered_batches:
@@ -334,15 +361,21 @@ def plan_distribution(
             if rec:
                 discount_recommendations.append(rec)
 
+    # Register quarantined batches in unallocated stock
+    for q in quarantined_waste_records:
+        unallocated[q["batch_id"]] = _round(q["quantity_kg"])
+
     # Compute comprehensive metrics
     delivered_kg = sum(a["quantity_kg"] for a in allocations)
     batch_map = {b["batch_id"]: b for b in batches}
 
-    # Spoilage / Expired stock: unsold stock with remaining shelf life <= planning horizon
-    spoiled_kg = sum(
+    # Spoilage / Expired stock: unsold active stock with remaining shelf life <= planning horizon + immediate_spoilage_kg
+    unallocated_expired_kg = sum(
         qty for b_id, qty in remaining_by_batch.items()
         if float(batch_map[b_id]["remaining_shelf_life_hours"]) <= horizon_hours
     )
+    spoiled_kg = immediate_spoilage_kg + unallocated_expired_kg
+
     # Fresh surplus: unsold stock with shelf life > planning horizon
     fresh_surplus_kg = sum(
         qty for b_id, qty in remaining_by_batch.items()
@@ -390,6 +423,7 @@ def plan_distribution(
         "unallocated_kg": _round(initial_stock_total - delivered_kg),
         "expired_stock_kg": _round(spoiled_kg),
         "spoiled_kg": _round(spoiled_kg),
+        "immediate_spoilage_kg": _round(immediate_spoilage_kg),
         "fresh_surplus_kg": _round(fresh_surplus_kg),
         "spoilage_rate_percent": spoilage_rate_percent,
 
@@ -428,6 +462,8 @@ def plan_distribution(
         "allocations": allocations,
         "unallocated_stock": unallocated,
         "discount_recommendations": discount_recommendations,
+        "quarantined_waste": quarantined_waste_records,
+        "immediate_spoilage_kg": _round(immediate_spoilage_kg),
         "metrics": metrics,
         "remaining_demand": {
             f"{d_id}:{comm}": _round(qty)
@@ -513,6 +549,8 @@ def build_plan(
         "baseline": baseline,
         "optimized": optimized,
         "improvement_summary": compare_plans(baseline, optimized),
+        "quarantined_waste": optimized.get("quarantined_waste", []),
+        "immediate_spoilage_kg": optimized.get("immediate_spoilage_kg", 0.0),
     }
 
 
@@ -544,6 +582,7 @@ def explain_plan(plan: dict, question: str = "Explain the plan") -> dict:
     metrics = plan.get("metrics", {})
     allocations = plan.get("allocations", [])
     discounts = plan.get("discount_recommendations", [])
+    quarantined = plan.get("quarantined_waste", [])
     strategy = plan.get("strategy", "optimized")
 
     if not allocations:
@@ -562,6 +601,12 @@ def explain_plan(plan: dict, question: str = "Explain the plan") -> dict:
             f"Key allocations: {examples}. Modeled expired/spoiled stock is {metrics.get('spoiled_kg', 0):g} kg, "
             f"and net revenue is ₹{metrics.get('net_revenue', 0):,.2f} after transport (₹{metrics.get('transport_cost', 0):,.2f}) "
             f"and handling costs (₹{metrics.get('handling_cost', 0):,.2f}). Unmet demand is {metrics.get('unmet_demand_kg', 0):g} kg."
+        )
+
+    if quarantined:
+        summary += (
+            f" {len(quarantined)} batch(es) ({plan.get('immediate_spoilage_kg', 0):g} kg) were quarantined as immediate compost/waste "
+            f"due to remaining shelf life being insufficient to clear warehouse handling."
         )
 
     if discounts:

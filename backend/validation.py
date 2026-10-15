@@ -59,11 +59,11 @@ def validate_inventory(inventory: list[dict[str, Any]]) -> list[dict[str, Any]]:
         # Shelf life validation
         try:
             shelf_life = float(batch.get("remaining_shelf_life_hours", 0))
-            if shelf_life <= 0:
+            if shelf_life < 0:
                 raise ValueError()
         except (TypeError, ValueError) as exc:
             raise ValidationError(
-                f"Batch '{batch_id}' has invalid remaining shelf life '{batch.get('remaining_shelf_life_hours')}': must be a positive number (> 0).",
+                f"Batch '{batch_id}' has invalid remaining shelf life '{batch.get('remaining_shelf_life_hours')}': Remaining shelf life must be non-negative (>= 0.0 hours).",
                 field="remaining_shelf_life_hours",
                 entity_id=batch_id
             ) from exc
