@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, BarChart3, Bell, Boxes,
-  Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, CircleHelp, Clock3, Cpu, Download, FileUp, Info, Leaf, MapPin,
+  Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, CircleHelp, Clock3, CloudFog, CloudRain, Cpu, Download, EyeOff, FileUp, Info, Leaf, MapPin,
   Menu, Package, Play, Plus, RefreshCw, Route, Search, Send, Settings, ShieldCheck, Sliders, Sparkles,
-  Sprout, Trash2, TrendingUp, Truck, Upload, User, Warehouse, X
+  Sprout, Sun, Trash2, TrendingUp, Truck, Upload, User, Warehouse, X, Zap
 } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { AtmosphereCanvas, WeatherMode } from './components/AtmosphereCanvas';
 
 type Batch = {
   batch_id: string;
@@ -213,6 +214,17 @@ function App() {
   const [toast, setToast] = useState('');
   const [solverMode, setSolverMode] = useState<'heuristic' | 'milp'>('heuristic');
   const [quarantineExpanded, setQuarantineExpanded] = useState<boolean>(true);
+
+  // Atmospheric Environmental Mode ('storm' | 'mist' | 'sun' | 'cyber' | 'off')
+  const [weatherMode, setWeatherMode] = useState<WeatherMode>(() => {
+    return (localStorage.getItem('agronex_weather_mode') as WeatherMode) || 'storm';
+  });
+
+  const handleWeatherChange = (mode: WeatherMode) => {
+    setWeatherMode(mode);
+    localStorage.setItem('agronex_weather_mode', mode);
+    notify(`Atmospheric FX: ${mode.toUpperCase()} environment active`);
+  };
 
   // Profile, Notifications & Workspace state
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -580,6 +592,19 @@ function App() {
 
   return (
     <div className="app-shell">
+      {/* Cinematic Background Scenery Crossfade Layers */}
+      <div className="cinematic-bg-container" aria-hidden="true">
+        <div className={`bg-layer bg-storm ${weatherMode === 'storm' ? 'active' : ''}`} />
+        <div className={`bg-layer bg-mist ${weatherMode === 'mist' ? 'active' : ''}`} />
+        <div className={`bg-layer bg-sun ${weatherMode === 'sun' ? 'active' : ''}`} />
+        <div className={`bg-layer bg-cyber ${weatherMode === 'cyber' ? 'active' : ''}`} />
+        <div className="bg-overlay-tint" />
+        <div className="cyber-grid-overlay" />
+      </div>
+
+      {/* 60FPS Interactive Atmospheric Particle Canvas */}
+      <AtmosphereCanvas mode={weatherMode} />
+
       {/* Sidebar */}
       <aside className={`sidebar ${mobileNav ? 'open' : ''}`}>
         <div className="brand">
@@ -682,6 +707,54 @@ function App() {
           </div>
 
           <div className="top-actions">
+            {/* Atmospheric Environment FX Engine Selector */}
+            <div className="atmosphere-mode-selector" title="Atmospheric Environment FX Engine">
+              <button
+                type="button"
+                className={`atmo-btn ${weatherMode === 'storm' ? 'active' : ''}`}
+                onClick={() => handleWeatherChange('storm')}
+                title="Electric Thunderstorm & Atmospheric Rain"
+              >
+                <CloudRain size={13} />
+                <span>Storm</span>
+              </button>
+              <button
+                type="button"
+                className={`atmo-btn ${weatherMode === 'mist' ? 'active' : ''}`}
+                onClick={() => handleWeatherChange('mist')}
+                title="Morning Valley Mist & Bioluminescent Spores"
+              >
+                <CloudFog size={13} />
+                <span>Mist</span>
+              </button>
+              <button
+                type="button"
+                className={`atmo-btn ${weatherMode === 'sun' ? 'active' : ''}`}
+                onClick={() => handleWeatherChange('sun')}
+                title="Golden Hour God Rays & Solar Dust"
+              >
+                <Sun size={13} />
+                <span>Sun Rays</span>
+              </button>
+              <button
+                type="button"
+                className={`atmo-btn ${weatherMode === 'cyber' ? 'active' : ''}`}
+                onClick={() => handleWeatherChange('cyber')}
+                title="Quantum Data Stream & Cyber Matrix"
+              >
+                <Cpu size={13} />
+                <span>Cyber</span>
+              </button>
+              <button
+                type="button"
+                className={`atmo-btn atmo-btn-off ${weatherMode === 'off' ? 'active' : ''}`}
+                onClick={() => handleWeatherChange('off')}
+                title="Disable Atmospheric Canvas FX"
+              >
+                <EyeOff size={13} />
+              </button>
+            </div>
+
             {/* Solver Mode Segmented Toggle */}
             <div className="solver-mode-toggle" title="Switch Optimization Solver Engine">
               <button
@@ -801,7 +874,11 @@ function App() {
           <div className="page-heading">
             <div>
               <div className="eyebrow">
-                <span className="eyebrow-line" /> PERISHABLE SUPPLY CHAIN INTELLIGENCE
+                <span className="eyebrow-line" />
+                <span>PERISHABLE SUPPLY CHAIN INTELLIGENCE</span>
+                <span className="hud-telemetry-badge" title="Orbital & Atmospheric Telemetry Sync">
+                  <Activity size={10} /> SYS.ONLINE // {weatherMode.toUpperCase()}
+                </span>
               </div>
               <h1>{pageTitle}<span className="heading-period">.</span></h1>
               <p>
