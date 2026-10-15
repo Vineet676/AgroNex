@@ -310,3 +310,65 @@ def test_stale_fallback_snapshot_on_failure():
     recover_r = client.post("/api/data/refresh-routes", json={"simulate_failure": False})
     assert recover_r.status_code == 200
     assert recover_r.json()["status"] == "refreshed"
+
+
+def test_full_economic_objective_function_cogs_and_spoilage_penalties():
+    """Verifies MoFPI Problem Statement 03 economic accounting:
+    Net Profit = Gross Revenue - Transport - Handling - Procurement COGS - Spoilage Penalties.
+    """
+    inventory = [
+        # Batch 1: delivered (50kg), unit_cost = 20, price = 40
+        {
+            "batch_id": "B_DELIV", "commodity": "Tomatoes", "quantity_kg": 50,
+            "remaining_shelf_life_hours": 12, "selling_price_per_kg": 40,
+            "unit_cost_per_kg": 20, "origin_id": "CENTRAL", "handling_time_hours": 1,
+            "handling_cost_per_kg": 1, "harvest_date": "2026-10-15T06:00:00Z"
+        },
+        # Batch 2: unallocated expired (30kg), unit_cost = 15, price = 30
+        {
+            "batch_id": "B_SPOIL", "commodity": "Spinach", "quantity_kg": 30,
+            "remaining_shelf_life_hours": 8, "selling_price_per_kg": 30,
+            "unit_cost_per_kg": 15, "origin_id": "CENTRAL", "handling_time_hours": 1,
+            "handling_cost_per_kg": 1, "harvest_date": "2026-10-15T08:00:00Z"
+        },
+        # Batch 3: quarantined waste (20kg), unit_cost = 10, handling = 1.0, shelf = 0.5
+        {
+            "batch_id": "B_QUAR", "commodity": "Berries", "quantity_kg": 20,
+            "remaining_shelf_life_hours": 0.5, "selling_price_per_kg": 20,
+            "unit_cost_per_kg": 10, "origin_id": "CENTRAL", "handling_time_hours": 1.0,
+            "handling_cost_per_kg": 1, "harvest_date": "2026-10-15T09:00:00Z"
+        },
+    ]
+    destinations = [
+        {"destination_id": "D1", "name": "Hub 1", "delivery_window_hours": 24, "demand_by_commodity": {"Tomatoes": 50}, "price_by_commodity": {"Tomatoes": 40}},
+    ]
+    transport = [
+        {"origin_id": "CENTRAL", "destination_id": "D1", "travel_time_hours": 2, "transport_cost": 100, "capacity_kg": 100},
+    ]
+
+    result = plan_distribution(inventory, destinations, transport, "optimized")
+    m = result["metrics"]
+
+    # 1. Gross Revenue = 50kg * 40 = 2000
+    assert m["gross_revenue"] == 2000.0
+    # 2. Transport = (100 / 100) * 50 = 50; Handling = 50 * 1 = 50
+    assert m["transport_cost"] == 50.0
+    assert m["handling_cost"] == 50.0
+    # 3. Net Revenue = 2000 - 50 - 50 = 1900
+    assert m["net_revenue"] == 1900.0
+    # 4. Procurement COGS = 50kg * 20 = 1000
+    assert m["procurement_cost"] == 1000.0
+    # 5. Spoilage Penalties =
+    #    B_QUAR (20kg) * (10 + 5) = 300
+    #    B_SPOIL (30kg) * (15 + 5) = 600
+    #    Total Spoilage Penalties = 900
+    assert m["spoilage_penalties"] == 900.0
+    # 6. Net Economic Profit = 1900 - 1000 - 900 = 0.0
+    assert m["net_profit"] == 0.0
+
+    # Test comparison improvement summary contains net_profit and penalties
+    both = build_plan(inventory, destinations, transport)
+    assert "net_profit_change_amount" in both["improvement_summary"]
+    assert "spoilage_penalties_change_amount" in both["improvement_summary"]
+    assert "procurement_cost_change_amount" in both["improvement_summary"]
+

@@ -37,10 +37,41 @@ class BatchInput(BaseModel):
     origin_id: str = Field(default="CENTRAL")
     handling_time_hours: float = Field(default=0.0, ge=0.0)
     handling_cost_per_kg: float = Field(default=0.0, ge=0.0)
+    unit_cost_per_kg: float | None = Field(default=None, ge=0.0, description="Farmer procurement or acquisition cost per kg")
+    harvest_date: str | None = Field(default=None, description="ISO timestamp or date of harvest")
+    spoilage_threshold: float | None = Field(default=0.0, ge=0.0, description="Minimum quality score or hours before total loss")
 
 
 # Alias for compatibility
 Batch = BatchInput
+
+
+class PlanMetrics(BaseModel):
+    initial_stock_kg: float
+    stock_used_kg: float
+    delivered_kg: float
+    unallocated_kg: float
+    expired_stock_kg: float
+    spoiled_kg: float
+    immediate_spoilage_kg: float = 0.0
+    fresh_surplus_kg: float
+    spoilage_rate_percent: float
+    initial_demand_kg: float
+    unmet_demand_kg: float
+    demand_fulfillment_percent: float
+    initial_capacity_kg: float
+    unused_capacity_kg: float
+    capacity_utilization_percent: float
+    gross_revenue: float
+    transport_cost: float
+    handling_cost: float
+    procurement_cost: float = 0.0
+    spoilage_penalties: float = 0.0
+    discount_cost: float = 0.0
+    net_revenue: float
+    net_profit: float = 0.0
+    potential_discount_revenue: float = 0.0
+    constraint_violations: int = 0
 
 
 class DistributionPlanResponse(BaseModel):
@@ -51,9 +82,10 @@ class DistributionPlanResponse(BaseModel):
     discount_recommendations: list[dict[str, Any]] = Field(default_factory=list)
     quarantined_waste: list[dict[str, Any]] = Field(default_factory=list)
     immediate_spoilage_kg: float = 0.0
-    metrics: dict[str, Any] = Field(default_factory=dict)
+    metrics: PlanMetrics | dict[str, Any] = Field(default_factory=dict)
     remaining_demand: dict[str, float] = Field(default_factory=dict)
     unused_route_capacity: dict[str, float] = Field(default_factory=dict)
     planning_horizon_hours: float = 24.0
     assumptions: list[str] = Field(default_factory=list)
+
 

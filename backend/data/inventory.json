@@ -5,6 +5,9 @@
     "quantity_kg": 100,
     "remaining_shelf_life_hours": 12,
     "selling_price_per_kg": 30,
+    "unit_cost_per_kg": 18.0,
+    "harvest_date": "2026-10-15T06:00:00Z",
+    "spoilage_threshold": 2.0,
     "origin_id": "CENTRAL",
     "handling_time_hours": 1,
     "handling_cost_per_kg": 1
@@ -15,6 +18,9 @@
     "quantity_kg": 80,
     "remaining_shelf_life_hours": 24,
     "selling_price_per_kg": 40,
+    "unit_cost_per_kg": 24.0,
+    "harvest_date": "2026-10-14T18:00:00Z",
+    "spoilage_threshold": 3.0,
     "origin_id": "CENTRAL",
     "handling_time_hours": 1,
     "handling_cost_per_kg": 1
@@ -25,6 +31,9 @@
     "quantity_kg": 80,
     "remaining_shelf_life_hours": 6,
     "selling_price_per_kg": 25,
+    "unit_cost_per_kg": 15.0,
+    "harvest_date": "2026-10-15T12:00:00Z",
+    "spoilage_threshold": 1.0,
     "origin_id": "CENTRAL",
     "handling_time_hours": 0.5,
     "handling_cost_per_kg": 1
@@ -35,6 +44,9 @@
     "quantity_kg": 70,
     "remaining_shelf_life_hours": 30,
     "selling_price_per_kg": 29,
+    "unit_cost_per_kg": 17.5,
+    "harvest_date": "2026-10-14T12:00:00Z",
+    "spoilage_threshold": 2.0,
     "origin_id": "CENTRAL",
     "handling_time_hours": 1,
     "handling_cost_per_kg": 1
@@ -45,6 +57,9 @@
     "quantity_kg": 90,
     "remaining_shelf_life_hours": 48,
     "selling_price_per_kg": 55,
+    "unit_cost_per_kg": 33.0,
+    "harvest_date": "2026-10-13T18:00:00Z",
+    "spoilage_threshold": 4.0,
     "origin_id": "CENTRAL",
     "handling_time_hours": 1.5,
     "handling_cost_per_kg": 1.5
@@ -55,6 +70,9 @@
     "quantity_kg": 60,
     "remaining_shelf_life_hours": 10,
     "selling_price_per_kg": 24,
+    "unit_cost_per_kg": 14.5,
+    "harvest_date": "2026-10-15T08:00:00Z",
+    "spoilage_threshold": 1.0,
     "origin_id": "CENTRAL",
     "handling_time_hours": 0.5,
     "handling_cost_per_kg": 1

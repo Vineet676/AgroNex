@@ -16,6 +16,8 @@ from typing import Any
 from .validation import validate_planning_dataset, ValidationError
 
 HORIZON_HOURS = 24.0
+DEFAULT_DISPOSAL_FEE_PER_KG = 5.0  # ₹5/kg organic waste disposal and handling fee
+DEFAULT_COGS_RATIO = 0.60          # Fallback: acquisition cost is 60% of baseline price if unit_cost_per_kg is missing
 
 
 def _round(value: float) -> float:
@@ -418,6 +420,41 @@ def plan_distribution(
     handling_cost_total = sum(a["handling_cost"] for a in allocations)
     net_revenue = gross_revenue - transport_cost_total - handling_cost_total
 
+    # 1. Procurement COGS (Cost of Goods Sold for Delivered Inventory)
+    procurement_cost_total = 0.0
+    for a in allocations:
+        b = batch_map.get(a["batch_id"], {})
+        u_cost = float(
+            b.get("unit_cost_per_kg")
+            if b.get("unit_cost_per_kg") is not None
+            else float(b.get("selling_price_per_kg", 0.0)) * DEFAULT_COGS_RATIO
+        )
+        procurement_cost_total += u_cost * float(a["quantity_kg"])
+
+    # 2. Spoilage Penalties (Lost Acquisition Value + Disposal/Compost Fee for Expired & Quarantined Produce)
+    spoilage_penalty_total = 0.0
+    for q in quarantined_waste_records:
+        b = batch_map.get(q["batch_id"], {})
+        u_cost = float(
+            b.get("unit_cost_per_kg")
+            if b.get("unit_cost_per_kg") is not None
+            else float(b.get("selling_price_per_kg", 0.0)) * DEFAULT_COGS_RATIO
+        )
+        spoilage_penalty_total += float(q["quantity_kg"]) * (u_cost + DEFAULT_DISPOSAL_FEE_PER_KG)
+
+    for b_id, qty in remaining_by_batch.items():
+        if qty > 0.01 and float(batch_map[b_id]["remaining_shelf_life_hours"]) <= horizon_hours:
+            b = batch_map[b_id]
+            u_cost = float(
+                b.get("unit_cost_per_kg")
+                if b.get("unit_cost_per_kg") is not None
+                else float(b.get("selling_price_per_kg", 0.0)) * DEFAULT_COGS_RATIO
+            )
+            spoilage_penalty_total += float(qty) * (u_cost + DEFAULT_DISPOSAL_FEE_PER_KG)
+
+    # 3. Grounded MoFPI Net Economic Profit
+    net_profit = net_revenue - procurement_cost_total - spoilage_penalty_total
+
     # Potential discount revenue if all recommendations are transacted
     potential_discount_revenue = sum(d["potential_discounted_revenue"] for d in discount_recommendations)
 
@@ -469,8 +506,11 @@ def plan_distribution(
         "gross_revenue": _round(gross_revenue),
         "transport_cost": _round(transport_cost_total),
         "handling_cost": _round(handling_cost_total),
+        "procurement_cost": _round(procurement_cost_total),
+        "spoilage_penalties": _round(spoilage_penalty_total),
         "discount_cost": 0.0,
         "net_revenue": _round(net_revenue),
+        "net_profit": _round(net_profit),
         "potential_discount_revenue": _round(potential_discount_revenue),
 
         # Reliability
@@ -528,11 +568,18 @@ def compare_plans(baseline: dict, optimized: dict) -> dict:
     net_revenue_change_amount = _round(o["net_revenue"] - b["net_revenue"])
     net_revenue_change_pct = rel_change(b["net_revenue"], o["net_revenue"])
 
+    net_profit_change_amount = _round(o.get("net_profit", 0.0) - b.get("net_profit", 0.0))
+    net_profit_change_pct = rel_change(b.get("net_profit", 0.0), o.get("net_profit", 0.0))
+
     transport_cost_change_amount = _round(o["transport_cost"] - b["transport_cost"])
     transport_cost_change_pct = rel_change(b["transport_cost"], o["transport_cost"], lower_is_better=True)
 
     handling_cost_change_amount = _round(o["handling_cost"] - b["handling_cost"])
     handling_cost_change_pct = rel_change(b["handling_cost"], o["handling_cost"], lower_is_better=True)
+
+    procurement_cost_change_amount = _round(o.get("procurement_cost", 0.0) - b.get("procurement_cost", 0.0))
+    spoilage_penalties_change_amount = _round(o.get("spoilage_penalties", 0.0) - b.get("spoilage_penalties", 0.0))
+    spoilage_penalties_change_pct = rel_change(b.get("spoilage_penalties", 0.0), o.get("spoilage_penalties", 0.0), lower_is_better=True)
 
     unmet_demand_red_kg = _round(b["unmet_demand_kg"] - o["unmet_demand_kg"])
     unused_capacity_red_kg = _round(b["unused_capacity_kg"] - o["unused_capacity_kg"])
@@ -551,12 +598,17 @@ def compare_plans(baseline: dict, optimized: dict) -> dict:
         # Financial comparison
         "net_revenue_change_amount": net_revenue_change_amount,
         "net_revenue_change_percent": net_revenue_change_pct,
+        "net_profit_change_amount": net_profit_change_amount,
+        "net_profit_change_percent": net_profit_change_pct,
 
         # Cost components comparison
         "transport_cost_change_amount": transport_cost_change_amount,
         "transport_cost_change_percent": transport_cost_change_pct,
         "handling_cost_change_amount": handling_cost_change_amount,
         "handling_cost_change_percent": handling_cost_change_pct,
+        "procurement_cost_change_amount": procurement_cost_change_amount,
+        "spoilage_penalties_change_amount": spoilage_penalties_change_amount,
+        "spoilage_penalties_change_percent": spoilage_penalties_change_pct,
 
         # Resource efficiency
         "unmet_demand_reduction_kg": unmet_demand_red_kg,
@@ -627,8 +679,10 @@ def explain_plan(plan: dict, question: str = "Explain the plan") -> dict:
         summary = (
             f"The {strategy} plan dispatches {metrics.get('delivered_kg', 0):g} kg across {len(allocations)} allocation(s). "
             f"Key allocations: {examples}. Modeled expired/spoiled stock is {metrics.get('spoiled_kg', 0):g} kg, "
-            f"and net revenue is ₹{metrics.get('net_revenue', 0):,.2f} after transport (₹{metrics.get('transport_cost', 0):,.2f}) "
-            f"and handling costs (₹{metrics.get('handling_cost', 0):,.2f}). Unmet demand is {metrics.get('unmet_demand_kg', 0):g} kg."
+            f"net revenue is ₹{metrics.get('net_revenue', 0):,.2f} after transport (₹{metrics.get('transport_cost', 0):,.2f}) "
+            f"and handling costs (₹{metrics.get('handling_cost', 0):,.2f}), and net profit is ₹{metrics.get('net_profit', 0):,.2f} "
+            f"after procurement COGS (₹{metrics.get('procurement_cost', 0):,.2f}) and spoilage penalties (₹{metrics.get('spoilage_penalties', 0):,.2f}). "
+            f"Unmet demand is {metrics.get('unmet_demand_kg', 0):g} kg."
         )
 
     if quarantined:

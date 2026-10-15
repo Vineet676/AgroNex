@@ -120,6 +120,39 @@ def validate_inventory(inventory: list[dict[str, Any]]) -> list[dict[str, Any]]:
         item["selling_price_per_kg"] = round(price, 2)
         item["handling_cost_per_kg"] = round(handling_cost, 2)
         item["handling_time_hours"] = round(handling_time, 2)
+
+        # Optional unit cost (COGS) validation
+        if "unit_cost_per_kg" in batch and batch["unit_cost_per_kg"] is not None:
+            try:
+                unit_cost = float(batch["unit_cost_per_kg"])
+                if unit_cost < 0:
+                    raise ValueError()
+                item["unit_cost_per_kg"] = round(unit_cost, 2)
+            except (TypeError, ValueError) as exc:
+                raise ValidationError(
+                    f"Batch '{batch_id}' has invalid unit cost '{batch.get('unit_cost_per_kg')}': must be non-negative (>= 0).",
+                    field="unit_cost_per_kg",
+                    entity_id=batch_id,
+                ) from exc
+
+        # Optional spoilage threshold validation
+        if "spoilage_threshold" in batch and batch["spoilage_threshold"] is not None:
+            try:
+                thresh = float(batch["spoilage_threshold"])
+                if thresh < 0:
+                    raise ValueError()
+                item["spoilage_threshold"] = round(thresh, 2)
+            except (TypeError, ValueError) as exc:
+                raise ValidationError(
+                    f"Batch '{batch_id}' has invalid spoilage threshold '{batch.get('spoilage_threshold')}': must be non-negative (>= 0).",
+                    field="spoilage_threshold",
+                    entity_id=batch_id,
+                ) from exc
+
+        # Optional harvest date string
+        if "harvest_date" in batch and batch["harvest_date"] is not None:
+            item["harvest_date"] = str(batch["harvest_date"]).strip()
+
         validated_inventory.append(item)
 
     return validated_inventory

@@ -80,6 +80,12 @@ class InventoryProvider(BaseProvider):
                 "handling_cost_per_kg": float(row.get("handling_cost_per_kg", 0) or 0),
                 "handling_time_hours": float(row.get("handling_time_hours", 0) or 0),
             }
+            if "unit_cost_per_kg" in row and row["unit_cost_per_kg"].strip():
+                batch["unit_cost_per_kg"] = float(row["unit_cost_per_kg"])
+            if "harvest_date" in row and row["harvest_date"].strip():
+                batch["harvest_date"] = row["harvest_date"].strip()
+            if "spoilage_threshold" in row and row["spoilage_threshold"].strip():
+                batch["spoilage_threshold"] = float(row["spoilage_threshold"])
             if "temperature_celsius" in row and row["temperature_celsius"].strip():
                 batch["temperature_celsius"] = float(row["temperature_celsius"])
             rows.append(batch)
@@ -364,12 +370,13 @@ class DataManager:
             writer = csv.writer(output)
             writer.writerow([
                 "batch_id", "commodity", "quantity_kg", "remaining_shelf_life_hours",
-                "selling_price_per_kg", "origin_id", "handling_cost_per_kg", "handling_time_hours"
+                "selling_price_per_kg", "unit_cost_per_kg", "harvest_date", "origin_id", "handling_cost_per_kg", "handling_time_hours"
             ])
             for b in self.inventory_provider.get_data():
                 writer.writerow([
                     b["batch_id"], b["commodity"], b["quantity_kg"], b["remaining_shelf_life_hours"],
-                    b["selling_price_per_kg"], b["origin_id"], b.get("handling_cost_per_kg", 0), b.get("handling_time_hours", 0)
+                    b["selling_price_per_kg"], b.get("unit_cost_per_kg", ""), b.get("harvest_date", ""),
+                    b["origin_id"], b.get("handling_cost_per_kg", 0), b.get("handling_time_hours", 0)
                 ])
             return output.getvalue()
 
